@@ -353,15 +353,20 @@ class CreatorStudio {
               <button id="btn-prev-step" class="btn-glass" title="Paso Anterior">⏮</button>
               <button id="btn-next-step" class="btn-glass" title="Siguiente Paso">⏭</button>
               <div style="height: 16px; width: 1px; background: var(--bg-panel-border); margin: 0 4px;"></div>
-              <button id="btn-timeline-delete-step" class="btn-glass" style="color: #f87171; border-color: rgba(239, 68, 68, 0.35); background: rgba(239, 68, 68, 0.08);" title="Eliminar el paso actualmente seleccionado">
-                <span>🗑️</span> Eliminar Paso
+              <button id="btn-timeline-duplicate-step" class="btn-glass" style="color: #93c5fd; border-color: rgba(59, 130, 246, 0.35); background: rgba(59, 130, 246, 0.08);" title="Duplicar el paso actual (Ctrl+D)">
+                <span>✨</span> Duplicar
+              </button>
+              <button id="btn-timeline-delete-step" class="btn-glass" style="color: #f87171; border-color: rgba(239, 68, 68, 0.35); background: rgba(239, 68, 68, 0.08);" title="Eliminar el paso actualmente seleccionado (Delete)">
+                <span>🗑️</span> Eliminar
               </button>
               <div style="height: 16px; width: 1px; background: var(--bg-panel-border); margin: 0 4px;"></div>
               <span id="timeline-time-display" style="font-size: 12px; font-family: monospace; color: var(--text-muted);">00:00.00 / 00:00.00</span>
             </div>
 
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <span style="font-size: 11px; color: var(--text-muted);">Haz clic en el mockup para posicionar el cursor</span>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-size: 11px; color: var(--text-muted); background: rgba(255,255,255,0.04); padding: 4px 8px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.06);">
+                ⌨️ <b style="color: #cbd5e1;">Espacio</b>: Play | <b style="color: #cbd5e1;">Ctrl+D</b>: Duplicar | <b style="color: #cbd5e1;">Ctrl+S</b>: Guardar | <b>Arrastra</b> para reordenar
+              </span>
             </div>
           </div>
 
@@ -468,9 +473,46 @@ class CreatorStudio {
       if (this.currentStepIndex < this.project.steps.length - 1) this.selectStep(this.currentStepIndex + 1);
     });
 
-    // Eliminar Paso desde Timeline
+    // Duplicar y Eliminar Paso desde Timeline
+    document.getElementById('btn-timeline-duplicate-step')?.addEventListener('click', () => {
+      this.duplicateCurrentStep();
+    });
     document.getElementById('btn-timeline-delete-step')?.addEventListener('click', () => {
       this.deleteCurrentStep();
+    });
+
+    // Atajos de Teclado Globales
+    window.addEventListener('keydown', (e) => {
+      const target = e.target as HTMLElement;
+      const isInput = target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable);
+
+      // Ctrl + D / Cmd + D: Duplicar paso activo
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'd') {
+        e.preventDefault();
+        this.duplicateCurrentStep();
+        return;
+      }
+
+      // Ctrl + S: Guardar proyecto
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        this.saveProjectData(true);
+        return;
+      }
+
+      // Atajos que solo se disparan fuera de inputs de texto
+      if (!isInput) {
+        if (e.code === 'Space') {
+          e.preventDefault();
+          this.togglePlay();
+        } else if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          if (this.currentStepIndex > 0) this.selectStep(this.currentStepIndex - 1);
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          if (this.currentStepIndex < this.project.steps.length - 1) this.selectStep(this.currentStepIndex + 1);
+        }
+      }
     });
 
     // Guardar Proyecto
@@ -1222,6 +1264,29 @@ class CreatorStudio {
     }));
   }
 
+  private duplicateCurrentStep() {
+    if (this.project.steps.length === 0) return;
+    const currentStep = this.project.steps[this.currentStepIndex];
+    if (!currentStep) return;
+
+    const clonedStep: StepItem = JSON.parse(JSON.stringify(currentStep));
+    clonedStep.id = `step-${Date.now()}`;
+    clonedStep.title = `${currentStep.title || `Paso ${this.currentStepIndex + 1}`} (Copia)`;
+
+    const insertIndex = this.currentStepIndex + 1;
+    this.project.steps.splice(insertIndex, 0, clonedStep);
+    this.selectStep(insertIndex);
+    this.saveProjectData(false);
+    this.showToast(`✨ Paso duplicado en posición #${insertIndex + 1}`);
+  }
+
+  private isPointerDragging = false;
+  private pointerStartX = 0;
+  private pointerStartY = 0;
+  private draggedStepIndex: number | null = null;
+  private dropTargetIndex: number | null = null;
+  private dropPosition: 'before' | 'after' | null = null;
+
   private renderTimelineTracks() {
     const trackContainer = document.getElementById('steps-track-container');
     if (!trackContainer) return;
@@ -1231,24 +1296,114 @@ class CreatorStudio {
       const widthPx = Math.max(100, (st.duration / 1000) * 35);
       const isIntro = st.type === 'section';
       return `
-        <div class="track-step-block ${isActive ? 'active' : ''}" style="width: ${widthPx}px; flex-shrink: 0;" data-index="${i}">
-          <div style="display: flex; justify-content: space-between; align-items: center;">
+        <div class="track-step-block ${isActive ? 'active' : ''}" 
+             style="width: ${widthPx}px; flex-shrink: 0;" 
+             data-index="${i}">
+          <div style="display: flex; justify-content: space-between; align-items: center; pointer-events: none;">
             <span style="font-size: 11px; font-weight: 700; color: ${isActive ? '#93c5fd' : '#cbd5e1'};">
               ${isIntro ? '🎬 Intro' : `#${i + 1}`}
             </span>
             <span style="font-size: 10px; color: var(--text-muted); font-family: monospace;">${(st.duration / 1000).toFixed(1)}s</span>
           </div>
-          <div style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted);">
+          <div style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted); pointer-events: none;">
             ${st.transcript.slice(0, 18) || (isIntro ? 'Título Intro' : 'Sin texto')}...
           </div>
         </div>
       `;
     }).join('');
 
-    trackContainer.querySelectorAll('.track-step-block').forEach((el) => {
-      el.addEventListener('click', (e) => {
-        const idx = parseInt((e.currentTarget as HTMLElement).getAttribute('data-index') || '0', 10);
-        this.selectStep(idx);
+    const stepBlocks = trackContainer.querySelectorAll('.track-step-block');
+    stepBlocks.forEach((el) => {
+      const htmlEl = el as HTMLElement;
+      const idx = parseInt(htmlEl.getAttribute('data-index') || '0', 10);
+
+      htmlEl.addEventListener('pointerdown', (e: PointerEvent) => {
+        if (e.button !== 0) return; // Solo clic izquierdo
+        e.preventDefault(); // Evitar comportamientos nativos de selección/drag de WebView2
+        this.pointerStartX = e.clientX;
+        this.pointerStartY = e.clientY;
+        this.isPointerDragging = false;
+        this.draggedStepIndex = idx;
+
+        const onPointerMove = (moveEv: PointerEvent) => {
+          const dx = moveEv.clientX - this.pointerStartX;
+          const dy = moveEv.clientY - this.pointerStartY;
+          if (!this.isPointerDragging && Math.sqrt(dx * dx + dy * dy) > 4) {
+            this.isPointerDragging = true;
+            htmlEl.classList.add('dragging');
+            htmlEl.style.pointerEvents = 'none'; // Clave para que elementFromPoint vea lo que hay debajo
+          }
+
+          if (this.isPointerDragging) {
+            const elemBelow = document.elementFromPoint(moveEv.clientX, moveEv.clientY);
+            const targetBlock = elemBelow?.closest('.track-step-block') as HTMLElement | null;
+
+            stepBlocks.forEach((b) => b.classList.remove('drag-over-left', 'drag-over-right'));
+
+            if (targetBlock && trackContainer.contains(targetBlock)) {
+              const targetIdx = parseInt(targetBlock.getAttribute('data-index') || '0', 10);
+              const rect = targetBlock.getBoundingClientRect();
+              const midX = rect.left + rect.width / 2;
+              this.dropTargetIndex = targetIdx;
+
+              if (moveEv.clientX < midX) {
+                this.dropPosition = 'before';
+                targetBlock.classList.add('drag-over-left');
+              } else {
+                this.dropPosition = 'after';
+                targetBlock.classList.add('drag-over-right');
+              }
+            } else {
+              this.dropTargetIndex = null;
+              this.dropPosition = null;
+            }
+          }
+        };
+
+        const onPointerUp = () => {
+          window.removeEventListener('pointermove', onPointerMove);
+          window.removeEventListener('pointerup', onPointerUp);
+          window.removeEventListener('pointercancel', onPointerUp);
+
+          htmlEl.classList.remove('dragging');
+          htmlEl.style.pointerEvents = '';
+          stepBlocks.forEach((b) => b.classList.remove('drag-over-left', 'drag-over-right'));
+
+          if (this.isPointerDragging) {
+            if (
+              this.draggedStepIndex !== null &&
+              this.dropTargetIndex !== null &&
+              this.dropPosition !== null
+            ) {
+              const fromIdx = this.draggedStepIndex;
+              let targetIdx = this.dropTargetIndex;
+              let insertIndex = this.dropPosition === 'before' ? targetIdx : targetIdx + 1;
+
+              if (fromIdx !== targetIdx && !(this.dropPosition === 'after' && fromIdx === targetIdx)) {
+                const [movedStep] = this.project.steps.splice(fromIdx, 1);
+                if (fromIdx < insertIndex) {
+                  insertIndex -= 1;
+                }
+                this.project.steps.splice(insertIndex, 0, movedStep);
+                this.selectStep(insertIndex);
+                this.saveProjectData(false);
+                this.showToast(`🔄 Pasos reordenados`);
+              }
+            }
+            this.isPointerDragging = false;
+            this.draggedStepIndex = null;
+            this.dropTargetIndex = null;
+            this.dropPosition = null;
+          } else {
+            // Fue un simple clic
+            this.draggedStepIndex = null;
+            this.selectStep(idx);
+          }
+        };
+
+        window.addEventListener('pointermove', onPointerMove);
+        window.addEventListener('pointerup', onPointerUp);
+        window.addEventListener('pointercancel', onPointerUp);
       });
     });
   }

@@ -402,10 +402,17 @@ body {
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  cursor: pointer;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
   transition: all 0.15s;
   position: relative;
   overflow: hidden;
+}
+
+.track-step-block:active {
+  cursor: grabbing;
 }
 
 .track-step-block:hover {
@@ -417,6 +424,24 @@ body {
   background: rgba(59, 130, 246, 0.15);
   border-color: var(--accent-primary);
   box-shadow: 0 0 0 1px var(--accent-primary), 0 4px 12px rgba(59, 130, 246, 0.2);
+}
+
+.track-step-block.dragging {
+  opacity: 0.35;
+  transform: scale(0.95);
+  border-style: dashed;
+  border-color: #60a5fa;
+  cursor: grabbing;
+}
+
+.track-step-block.drag-over-left {
+  border-left: 4px solid #3b82f6 !important;
+  background: rgba(59, 130, 246, 0.25) !important;
+}
+
+.track-step-block.drag-over-right {
+  border-right: 4px solid #3b82f6 !important;
+  background: rgba(59, 130, 246, 0.25) !important;
 }
 
 /* Intro Title Styles */

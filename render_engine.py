@@ -691,6 +691,26 @@ def main():
     num_workers = max(1, multiprocessing.cpu_count() - 1)
     print(f"[TURBO] Acelerando con {num_workers} núcleos de CPU en paralelo.")
 
+    def detect_best_encoder():
+        candidates = [
+            ("h264_nvenc", ["-c:v", "h264_nvenc", "-preset", "p4", "-cq", "19", "-pix_fmt", "yuv420p"]),
+            ("h264_qsv", ["-c:v", "h264_qsv", "-global_quality", "20", "-pix_fmt", "nv12"]),
+            ("h264_amf", ["-c:v", "h264_amf", "-quality", "speed", "-pix_fmt", "yuv420p"]),
+            ("libx264", ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "17", "-preset", "faster"]),
+        ]
+        for name, args in candidates:
+            try:
+                test_cmd = ["ffmpeg", "-y", "-f", "lavfi", "-i", "nullsrc=s=64x64:d=0.1"] + args + ["-f", "null", "-"]
+                res = subprocess.run(test_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if res.returncode == 0:
+                    return name, args
+            except Exception:
+                pass
+        return "libx264", ["-c:v", "libx264", "-pix_fmt", "yuv420p", "-crf", "17", "-preset", "faster"]
+
+    enc_name, enc_args = detect_best_encoder()
+    print(f"[ENCODER] Motor de codificación seleccionado: {enc_name.upper()} ({'GPU Acelerada' if enc_name != 'libx264' else 'CPU Turbo'})")
+
     ffmpeg_cmd = [
         "ffmpeg", "-y",
         "-f", "rawvideo",
@@ -698,13 +718,8 @@ def main():
         "-s", f"{int(CANVAS_W)}x{int(CANVAS_H)}",
         "-pix_fmt", "rgb24",
         "-r", str(fps),
-        "-i", "-",
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-crf", "17",
-        "-preset", "faster",
-        OUTPUT_VIDEO_PATH
-    ]
+        "-i", "-"
+    ] + enc_args + [OUTPUT_VIDEO_PATH]
 
     ffmpeg_proc = subprocess.Popen(ffmpeg_cmd, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
 
