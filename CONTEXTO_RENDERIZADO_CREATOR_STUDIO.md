@@ -1,123 +1,176 @@
-# 🎬 Creator Studio — Documento de Contexto y Arquitectura de Renderizado
+# 🎬 Creator Studio (v1.0.0) — Documento de Contexto y Arquitectura Integral
 
-Este documento detalla exhaustivamente la arquitectura técnica, el diagnóstico de discrepancias, las soluciones implementadas y las optimizaciones de rendimiento desarrolladas para lograr una fidelidad visual **100% Pixel-Perfect (1:1)** entre el **Creator Studio** (interfaz de edición interactiva basada en Vite + TypeScript + Tauri + Rust) y el **Motor de Renderizado Nativo** (`render_engine.py` + `uv` + Pillow + FFmpeg).
+Este documento constituye la **fuente de verdad técnica y operativa** de **Creator Studio**. Ha sido diseñado para que cualquier desarrollador o agente de Inteligencia Artificial que retome el proyecto en futuras iteraciones comprenda de inmediato la arquitectura completa, las decisiones de diseño, los protocolos de sincronización, la estructura multi-proyecto y el pipeline de renderizado de alto rendimiento.
 
 ---
 
 ## 📑 Tabla de Contenidos
-1. [Visión General del Sistema](#1-visión-general-del-sistema)
-2. [Arquitectura del Pipeline de Renderizado](#2-arquitectura-del-pipeline-de-renderizado)
-3. [Diagnóstico de Discrepancias Visuales (Causas Raíz)](#3-diagnóstico-de-discrepancias-visuales-causas-raíz)
-4. [Soluciones Implementadas y Optimización Matemática](#4-soluciones-implementadas-y-optimización-matemática)
-5. [Sincronización y Persistencia de Datos](#5-sincronización-y-persistencia-de-datos)
-6. [Resumen de Versiones y Evolución del Engine](#6-resumen-de-versiones-y-evolución-del-engine)
+1. [Visión General y Propósito](#1-visión-general-y-propósito)
+2. [Stack Tecnológico y Estructura del Proyecto](#2-stack-tecnológico-y-estructura-del-proyecto)
+3. [Arquitectura del Sistema & Flujos de Trabajo](#3-arquitectura-del-sistema--flujos-de-trabajo)
+   - [A. Flujo Multi-Proyecto y Landing Hub](#a-flujo-multi-proyecto-y-landing-hub)
+   - [B. Edición e Interactividad en el Studio](#b-edición-e-interactividad-en-el-studio)
+   - [C. Pipeline de Renderizado Turbo (Python + UV + FFmpeg)](#c-pipeline-de-renderizado-turbo-python--uv--ffmpeg)
+4. [Capa Nativa Rust / Tauri (IPC y Empaquetado)](#4-capa-nativa-rust--tauri-ipc-y-empaquetado)
+5. [Motor de Renderizado (`render_engine.py`)](#5-motor-de-renderizado-render_enginepy)
+   - [Fórmulas y Calibración Pixel-Perfect (1:1)](#fórmulas-y-calibración-pixel-perfect-11)
+   - [Evolución de Versiones del Engine (V20 a V25)](#evolución-de-versiones-del-engine-v20-a-v25)
+6. [Diseño UI/UX Noir-Tech Glassmorphic](#6-diseño-uiux-noir-tech-glassmorphic)
+7. [Guía Rápida de Comandos y Compilación](#7-guía-rápida-de-comandos-y-compilación)
+8. [Reglas Clave para Futuras Iteraciones de IA](#8-reglas-clave-para-futuras-iteraciones-de-ia)
 
 ---
 
-## 1. Visión General del Sistema
+## 1. Visión General y Propósito
 
-El objetivo central del sistema es garantizar el principio **WYSIWYG** (*What You See Is What You Get*): cualquier ajuste realizado en el editor interactivo (coordenadas de cursor, tipografías, zoom, animaciones de clic, subtítulos con resaltado de palabras y encabezados personalizados) debe renderizarse de forma exactamente idéntica en el video exportado a Full HD (1920x1080 @ 30 FPS).
+**Creator Studio** es una aplicación de escritorio nativa orientada a la creación, edición y exportación acelerada de videotutoriales interactivos con calidad de producción profesional.
+
+* **Objetivo Visual:** Paridad absoluta **WYSIWYG** (*What You See Is What You Get*) a **1080p Full HD (1920×1080 @ 30/60 FPS)**.
+* **Modelo Operativo:** Multi-proyecto aislado basado en carpetas locales independientes (`project.json` + carpeta `assets/`).
+* **Experiencia de Usuario:** Interfaz oscura *Noir-Tech* con efectos de desenfoque *Glassmorphism*, monitor de renderizado en tiempo real y flujo silencioso sin ventanas de consola secundarias.
 
 ```mermaid
 graph TD
-    UI[Creator Studio - Vite / TS] -->|Ajustes Visuales & Timeline| LS[LocalStorage / timeline.json]
-    UI -->|Click 'Renderizar MP4'| TauriIPC[Tauri Rust Backend]
-    TauriIPC -->|start_render_job| UV[uv Fast Execution]
-    UV -->|Multiprocessing Workers| Engine[render_engine.py]
-    Engine -->|Pillow Canvas Draw + Blur| Pipe[Piped Raw RGB24 Frames]
-    Pipe -->|libx264 CRF 17 Faster| FFmpeg[FFmpeg Encoder]
-    FFmpeg -->|output_tutorial.mp4| Video[Video Final Exportado]
+    Landing[Landing Hub: Crear o Abrir Proyecto] -->|Carga de proyecto| Studio[Editor Creator Studio: TypeScript + Vite]
+    Studio -->|Edición interactiva & Timeline| State[Estado Reactivo & Persistencia project.json]
+    Studio -->|Botón Renderizar MP4| TauriIPC[Backend Rust Tauri 2.0]
+    TauriIPC -->|Spawn Asíncrono no Bloqueante| UV[Acelerador uv + Python 3.12]
+    UV -->|Multiprocesamiento CPU Workers| Engine[render_engine.py]
+    Engine -->|Piped Raw RGB24 Frames| FFmpeg[FFmpeg libx264 CRF 17]
+    Engine -->|Logs [PROGRESO] % en vivo| TauriIPC
+    TauriIPC -->|Evento render-progress| Modal[Modal Glassmorphic con Barra y Shimmer]
+    FFmpeg -->|output_tutorial.mp4| Output[Video Final MP4 Full HD]
 ```
 
 ---
 
-## 2. Arquitectura del Pipeline de Renderizado
+## 2. Stack Tecnológico y Estructura del Proyecto
 
-### Componentes Clave:
-1. **Frontend (Vite + TS + CSS Glassmorphic):**
-   - Lienzo central con relación de aspecto $16:9$ ($1920 \times 1080$).
-   - Mockup Window Browser flotante de $1540\text{px}$ de ancho con radio de aspecto $2.1893$ y altura de cabecera de $44\text{px}$.
-   - Inspector lateral de propiedades con reactividad en tiempo real.
-2. **Capa Nativa (Rust / Tauri IPC):**
-   - Comandos `save_project` y `start_render_job`.
-   - Streaming de eventos en tiempo real (`render-progress`) para informar el porcentaje de exportación en la UI.
-3. **Motor de Renderizado Paralelo (`render_engine.py`):**
-   - Ejecución acelerada con `uv run --with pillow python render_engine.py`.
-   - Pool de procesos multiproceso (`ProcessPoolExecutor`) que renderiza lotes de fotogramas en paralelo utilizando todos los núcleos de CPU disponibles.
-   - Envío de *raw video bytes* (RGB24) directamente a la tubería `stdin` de FFmpeg sin generar archivos temporales en disco.
+### Tecnologías:
+* **Frontend:** TypeScript, Vite 8, HTML5, CSS3 Glassmorphism (sin frameworks pesados para latencia cero).
+* **Backend Nativo:** Tauri v2.11 (Rust 2021) con plugins de diálogo y eventos.
+* **Motor de Renderizado:** Python 3 (Pillow + Multiprocessing + ProcessPoolExecutor) ejecutado a través del gestor ultrarrápido **`uv`**.
+* **Codificador de Video:** FFmpeg (`libx264`, `yuv420p`, `crf 17`, `preset faster`).
 
----
-
-## 3. Diagnóstico de Discrepancias Visuales (Causas Raíz)
-
-Durante el proceso de auditoría y análisis comparativo entre las capturas de pantalla del Studio (`vista studio.png`) y el render previo (`sombras render.png`), se identificaron las siguientes falencias:
-
-### A. Desfase del Cursor en Pasos con Zoom
-* **Causa:** El script heredado calculaba la posición multiplicando las coordenadas normalizadas por el tamaño de la imagen interna escalada (`scaled_w`, `scaled_h`) sumando el desplazamiento (`offset_x`).
-* **Realidad del DOM:** En el navegador, el elemento `#mockup-cursor` es hijo de `#mockup-viewport` y su posición se rige por porcentajes absolutos respecto al contenedor fijo de $1540 \times 703.4\text{px}$ (`left: (x * 100)%`), independiente de la textura con zoom interna.
-
-### B. Sombras Duras y Planas vs. Desenfoques Gaussianos
-* **Causa:** Pillow dibujaba sombras con rectángulos simples con canal alfa sin difuminar.
-* **Realidad del DOM:** El Studio usa CSS multinivel:
-  - Mockup: `box-shadow: 0 30px 80px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.12)`.
-  - Subtítulo: `box-shadow: 0 20px 40px rgba(0,0,0,0.7)`.
-  - Intro (Paso 1): `text-shadow: 0 10px 40px rgba(0,0,0,0.8)`.
-
-### C. Ausencia de Transiciones Suaves entre Pasos
-* **Causa:** El render anterior saltaba instantáneamente entre las capturas de cada paso (corte duro), perdiendo la suavidad del crossfade visual.
-
-### D. Desincronización del Encabezado Superior (`headerStyle`)
-* **Causa:** Si el usuario desmarcaba la sombra (`hasShadow: false`) o cambiaba el texto o padding en el Studio, Python no recalculaba las dimensiones exactas del texto con respecto a la caja contenedora y dibujaba sombras rígidas.
+### Árbol de Archivos Principal:
+```text
+Creator App/
+├── index.html                   # Entry point HTML
+├── package.json                 # Configuración de npm y scripts
+├── render_engine.py             # Motor de renderizado multiproceso V25
+├── CONTEXTO_RENDERIZADO_CREATOR_STUDIO.md # Este documento
+├── public/
+│   └── assets/                  # Fuentes (Plus Jakarta Sans, Inter), bg e iconos
+├── src/
+│   ├── main.ts                  # Lógica del Studio, Landing, timeline y eventos
+│   ├── style.css                # Estilos globales, Glassmorphism, animaciones y modales
+│   └── types.ts                 # Interfaces TypeScript (ProjectData, StepItem, etc.)
+└── src-tauri/
+    ├── Cargo.toml               # Dependencias Rust (tauri, serde, etc.)
+    ├── tauri.conf.json          # Configuración de Tauri, bundle y recursos
+    ├── capabilities/
+    │   └── default.json         # Permisos IPC (dialog, core:event, etc.)
+    └── src/
+        └── lib.rs               # Backend Rust: gestión de archivos e invocación asíncrona
+```
 
 ---
 
-## 4. Soluciones Implementadas y Optimización Matemática
+## 3. Arquitectura del Sistema & Flujos de Trabajo
 
-### 1. Sistema Unificado de Coordenadas
-Se calibraron las fórmulas de posicionamiento del mockup y del cursor:
-$$\text{Lienzo} = 1920 \times 1080$$
-$$\text{Mockup Width} = 1540\text{px}, \quad \text{Mockup Viewport Height} = \frac{1540}{2.1893} \approx 703.42\text{px}$$
-$$\text{Mockup Header Height} = 44\text{px}, \quad \text{Total Mockup Height} = 747.42\text{px}$$
-$$\text{Posición Canvas X} = \frac{1920 - 1540}{2} = 190.0\text{px}$$
-$$\text{Posición Canvas Y} = 512.0 - \frac{747.42}{2} \approx 138.29\text{px}$$
-$$\text{Cursor Viewport X} = \text{int}(\text{clickCoords.x} \times 1540) - 2$$
-$$\text{Cursor Viewport Y} = \text{int}(\text{clickCoords.y} \times 703.42) - 2$$
+### A. Flujo Multi-Proyecto y Landing Hub
+* La aplicación siempre inicializa en una pantalla de bienvenida limpia (**Landing Hub**).
+* **Crear Nuevo Proyecto:** 
+  1. El usuario selecciona una carpeta vacía o dedicada.
+  2. Rust inicializa un archivo `project.json` base y la subcarpeta `assets/`.
+  3. Copia el fondo por defecto `guideless_bg.webp` dentro del proyecto.
+* **Abrir Proyecto Existente:**
+  1. El usuario selecciona cualquier archivo `project.json` o `timeline.json`.
+  2. La aplicación lee los datos y resuelve dinámicamente las rutas de las capturas relativas a la carpeta del proyecto.
+* **Cerrar Proyecto:** Botón `⬅ Volver` que guarda cambios y retorna al Landing Hub sin dejar estados residuales.
 
-### 2. Desenfoque Gaussiano Real (`ImageFilter.GaussianBlur`)
-- **Pre-renderizado de Sombra de Mockup:** Se genera un mapa RGBA difuso con `GaussianBlur(radius=28)` una sola vez en el inicializador del worker (`init_worker`), reduciendo el consumo de CPU por fotograma.
-- **Sombra de Subtítulos:** Se aplica `GaussianBlur(radius=18)` desplazada $20\text{px}$ en el eje vertical con opacidad del 70%.
-- **Glow de Palabras Activas:** Efecto de resplandor `GaussianBlur(radius=4)` alrededor del texto blanco activo.
-- **Intro (Paso 1):** Sombra suave con `GaussianBlur(radius=14)` desplazada $10\text{px}$ verticalmente.
-
-### 3. Transiciones Fluidas (Crossfade & Stage-Enter)
-- **Crossfade entre Pasos (0.4s):** Durante los primeros $400\text{ms}$ de un nuevo paso, la captura anterior se superpone con curva `ease_in_out_cubic` decreciente:
-  $$\alpha_{\text{prev}} = \text{int}\Big(\big(1.0 - \text{ease\_in\_out\_cubic}(t / 0.4)\big) \times 255\Big)$$
-- **Mockup Stage-Enter (0.6s tras Intro):** El contenedor del mockup escala suavemente de $0.96$ a $1.00$ con fade-in de opacidad durante la entrada al Paso 2.
-
-### 4. Encabezado Superior (`top-right-watermark`) Reactivo
-- **Medición de Glifos:** Se utiliza `font_header.getbbox(header_text)` para encajar el rectángulo de fondo de forma simétrica.
-- **Sombra Condicional:** Se evalúa `bool(header_style.get("hasShadow", False))` para omitir el dibujo de la sombra cuando esté desactivada.
-- **Padding y Esquinas:** `padding: 6px [backgroundPadding]px` y `border-radius: [borderRadius]px` exactos.
+### B. Edición e Interactividad en el Studio
+* **Viewport Interactivo:** El mockup emula un navegador macOS flotante ($1540\text{px}$ de ancho).
+* **Calibración Directa de Clics:** Al hacer clic directamente sobre el mockup, se calculan y guardan las coordenadas relativas normalizadas ($0.0$ a $1.0$).
+* **Timeline Tracks:** Pistas de tiempo que representan cada paso, duración en segundos, subtítulo y marcas de sincronización palabra por palabra.
+* **Gestión de Pasos:** Posibilidad de importar nuevas capturas (`png`, `jpg`, `webp`) y botón para **eliminar pasos** (`🗑️ Eliminar Paso`) con confirmación y protección mínima de 1 paso.
 
 ---
 
-## 5. Sincronización y Persistencia de Datos
+## 4. Capa Nativa Rust / Tauri (IPC y Empaquetado)
 
-Para evitar discrepancias entre el estado en memoria de la UI y el archivo consumido por Python:
-1. **Auto-Guardado antes del Render:** Al presionar *"🎬 Renderizar MP4"*, el método en `main.ts` guarda de inmediato la estructura completa `{ settings, steps }` en `timeline.json` y `localStorage` antes de invocar el comando nativo.
-2. **Rutas Absolutas Limpias:** Se normalizan los nombres de captura (`screenshot_X.webp`) para asegurar compatibilidad entre Windows (`\`) y estándares POSIX (`/`).
+El archivo [`src-tauri/src/lib.rs`](file:///C:/Users/WLADI/Desktop/IMAGENES%20MANUALES/TEST/Creator%20App/src-tauri/src/lib.rs) coordina la interacción con el sistema operativo:
+
+### Comandos Clave en Rust:
+1. `create_blank_project`: Genera el andamiaje del proyecto en la carpeta seleccionada.
+2. `load_project_file`: Carga y parsea el archivo de proyecto.
+3. `save_project`: Guarda el `project.json` en disco de forma segura.
+4. `import_step_screenshot`: Copia capturas externas dentro de la carpeta `assets/` del proyecto.
+5. `set_project_background`: Asigna y copia la imagen de fondo global.
+6. `read_file_as_base64`: Provee acceso a imágenes locales sin bloqueos de seguridad WebView.
+7. `start_render_job` (Asíncrono no bloqueante):
+   - **Localizador de Recursos:** Resuelve la ruta de `render_engine.py` tanto en modo desarrollo como en el paquete empaquetado `.exe` (`resource_dir()`, carpeta adyacente o carpeta raíz).
+   - **Detección Automática de `uv`:** Si `uv` está disponible en el sistema, ejecuta `uv run --with pillow python -u ...`; de lo contrario, hace fallback a `python -u`.
+   - **Ocultamiento de Consola en Windows:** Configura la bandera de proceso `CREATE_NO_WINDOW (0x08000000)` para ejecución 100% invisible.
+   - **Ejecución Asíncrona:** Utiliza `std::thread::spawn` y canales `mpsc` para que el renderizado corra en un hilo separado, impidiendo que la ventana de la aplicación entre en estado *(No responde)*.
+   - **Streaming de Progreso:** Captura el `stdout` en tiempo real y emite eventos `render-progress` a la interfaz.
 
 ---
 
-## 6. Resumen de Versiones y Evolución del Engine
+## 5. Motor de Renderizado (`render_engine.py`)
 
-| Versión | Cambios Principales |
-| :--- | :--- |
-| **V20** | Migración inicial a la carpeta `Creator App`, lectura de `timeline.json` dinámico y streaming básico a FFmpeg. |
-| **V21** | Corrección del cálculo de coordenadas del cursor sobre el viewport (eliminación del factor zoom en el cursor) e integración de fuentes nativas TTF (*Plus Jakarta Sans* e *Inter*). |
-| **V22** | Implementación de desenfoque gaussiano real (`GaussianBlur`) en sombras de mockup, subtítulos, glow de texto y renderizado de cajas glass. |
-| **V23** | Incorporación de **transiciones de crossfade (0.4s)** entre capturas, animación de entrada `.mockup-stage-enter`, sincronización reactiva completa de `headerStyle` y auto-guardado previo a render. |
+### Fórmulas y Calibración Pixel-Perfect (1:1):
+* **Resolución Lienzo:** $1920 \times 1080$ píxeles.
+* **Mockup:** Ancho $1540\text{px}$, Altura Viewport $703.42\text{px}$ (relación $2.1893$), Cabecera $44\text{px}$, Altura Total $747.42\text{px}$.
+* **Posición Canvas:** $X = 190.0\text{px}$, $Y \approx 138.29\text{px}$.
+* **Recorte de Esquinas de Mockup:** Radio de curvatura de $12\text{px}$ aplicado con máscara alfa (`putalpha`) sobre todo el mockup para garantizar que las capturas internas no sobresalgan en las esquinas inferiores.
+* **Encabezado Superior (Watermark):** Centrado vertical perfecto con compensación de caja tipográfica (`bbox[1]`) y padding simétrico.
+* **Sombras Gaussianas Reales:** `ImageFilter.GaussianBlur(radius=28)` para mockup, `radius=18` para subtítulos y `radius=4` para glow de palabras activas.
+* **Transición Fluida entre Pasos:** Crossfade de $0.45\text{s}$ con interpolación cúbica suave (`ease_in_out_cubic`).
+
+### Evolución de Versiones del Engine:
+* **V20-V22:** Migración a Vite, coordenadas de cursor desacopladas del zoom, sombras gaussianas.
+* **V23:** Crossfades fluidos, animación de stage-enter y auto-guardado previo a render.
+* **V24:** Soporte dinámico multi-proyecto mediante argumentos CLI `--project-dir` y `--output`.
+* **V25 (Actual en v1.0.0):** Máscara de esquinas redondeadas $12\text{px}$ en mockup, tipografía centrada en watermark, streaming sin buffer (`-u` / `PYTHONUNBUFFERED`) y compatibilidad completa con binarios empaquetados.
 
 ---
 
-> ✅ **Conclusión:** Con la versión **V23**, el motor de renderizado exporta el contenido con paridad visual absoluta frente a la vista en vivo del Creator Studio, manteniendo una velocidad de renderizado ultrarrápida impulsada por `uv` y procesamiento paralelo multinúcleo.
+## 6. Diseño UI/UX Noir-Tech Glassmorphic
+
+* **Paleta de Colores:** Fondo Slate Oscuro (`#030712` / `#0f172a`), bordes sutiles con translucidez (`rgba(255, 255, 255, 0.1)`), acentos Azul Neón (`#3b82f6` / `#60a5fa`).
+* **Modal de Progreso de Render:**
+  - Desplegado automático con fondo desenfocado (*backdrop-filter: blur(14px)*).
+  - Barra de progreso con gradiente y animación de brillo (*shimmer*).
+  - Indicadores numéricos en tiempo real del porcentaje (0% a 100%) y fotogramas totales procesados (ej. `Fotogramas: 312/786`).
+
+---
+
+## 7. Guía Rápida de Comandos y Compilación
+
+### Modo Desarrollo:
+```bash
+# Iniciar la aplicación en modo desarrollo local
+npx tauri dev
+```
+
+### Compilar Ejecutable Standalone (.exe):
+```bash
+# Compilar el binario optimizado para producción
+npx tauri build
+```
+* **Ubicación del Instalador NSIS:** `src-tauri/target/release/bundle/nsis/Creator Studio_1.0.0_x64-setup.exe`
+* **Ubicación del Ejecutable Directo:** `src-tauri/target/release/Creator Studio.exe`
+
+---
+
+## 8. Reglas Clave para Futuras Iteraciones de IA
+
+1. **Memoria de Rutas en Tauri:**
+   - Nunca asumas rutas relativas basadas en `std::env::current_dir()` para archivos auxiliares (`render_engine.py`, assets); utiliza siempre la búsqueda por candidatos con `app.path().resource_dir()`.
+2. **Procesos Pesados en Rust:**
+   - Cualquier invocación a procesos externos (`Command`) debe ser asíncrona (`async fn` con `std::thread::spawn` o canales `mpsc`), jamás bloqueante en el hilo principal de Tauri.
+3. **Flujo de Eventos IPC:**
+   - Para que los eventos `emit` / `listen` funcionen en el `.exe` final, deben estar declarados en `src-tauri/capabilities/default.json` (`core:event:default`, `core:event:allow-listen`, `core:event:allow-emit`).
+4. **Respetar la Directiva de Commits del Usuario:**
+   - No realizar commits en Git hasta que las nuevas funciones hayan sido expresamente probadas y el usuario lo solicite.
