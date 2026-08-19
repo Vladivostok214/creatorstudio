@@ -191,74 +191,143 @@ fn check_ffmpeg_installed() -> bool {
 }
 
 #[tauri::command]
-fn start_render_job(app: AppHandle, project_dir: Option<String>, output_path: Option<String>) -> Result<String, String> {
-    let root = get_app_root();
-    let script_path = root.join("render_engine.py");
-    println!("[RUST-RENDER] Iniciando renderizador con alta velocidad (uv/python): {:?}", script_path);
+async fn start_render_job(app: AppHandle, project_dir: Option<String>, output_path: Option<String>) -> Result<String, String> {
+    use tauri::Manager;
 
-    let (mut cmd, used_uv) = {
-        let uv_check = Command::new("uv").arg("--version").output();
-        if uv_check.is_ok() && uv_check.unwrap().status.success() {
-            let mut c = Command::new("uv");
-            c.arg("run").arg("--with").arg("pillow").arg("python").arg(&script_path);
-            (c, true)
-        } else {
-            let mut c = Command::new("python");
-            c.arg(&script_path);
-            (c, false)
-        }
-    };
+    let (tx, rx) = std::sync::mpsc::channel();
 
-    if let Some(ref p_dir) = project_dir {
-        if !p_dir.trim().is_empty() {
-            cmd.arg("--project-dir").arg(p_dir);
-        }
-    }
+    std::thread::spawn(move || {
+        // 1. Intentar localizar render_engine.py en múltiples ubicaciones (Dev y Release/Bundle)
+        let candidate_paths = vec![
+            // En bundle de recursos Tauri
+            app.path().resource_dir().ok().map(|p| p.join("render_engine.py")),
+            app.path().resource_dir().ok().map(|p| p.join("_up_").join("render_engine.py")),
+            // Al lado del ejecutable .exe
+            std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("render_engine.py"))),
+            // En la raíz de desarrollo
+            Some(get_app_root().join("render_engine.py")),
+            // Carpeta padre si estamos en target/release
+            std::env::current_exe().ok().and_then(|p| p.parent().and_then(|d| d.parent()).and_then(|d| d.parent()).map(|d| d.join("render_engine.py"))),
+        ];
 
-    if let Some(ref out) = output_path {
-        if !out.trim().is_empty() {
-            cmd.arg("--output").arg(out);
-        }
-    }
-
-    cmd.current_dir(&root);
-    cmd.stdout(Stdio::piped());
-    cmd.stderr(Stdio::piped());
-
-    println!("[RUST-RENDER] Modo de ejecución: {}", if used_uv { "⚡ UV Ultra-Fast" } else { "Standard Python" });
-
-    let mut child = cmd.spawn().map_err(|e| format!("Error iniciando proceso de renderizado: {}", e))?;
-
-    if let Some(stdout) = child.stdout.take() {
-        let app_clone = app.clone();
-        std::thread::spawn(move || {
-            let reader = BufReader::new(stdout);
-            for line in reader.lines().flatten() {
-                println!("[PY-RENDER] {}", line);
-                if line.contains("[PROGRESO]") {
-                    let _ = app_clone.emit("render-progress", line.clone());
-                }
+        let mut script_path: Option<PathBuf> = None;
+        for cand in candidate_paths.into_iter().flatten() {
+            if cand.exists() {
+                script_path = Some(cand);
+                break;
             }
-        });
-    }
+        }
 
-    let output = child.wait_with_output().map_err(|e| format!("Error esperando renderizado: {}", e))?;
+        let script_path = script_path.unwrap_or_else(|| get_app_root().join("render_engine.py"));
+        println!("[RUST-RENDER] Localizado renderizador en: {:?}", script_path);
 
-    if output.status.success() {
-        let final_dest = output_path.unwrap_or_else(|| {
-            if let Some(ref p_dir) = project_dir {
-                PathBuf::from(p_dir).join("output_tutorial.mp4").to_string_lossy().to_string()
+        let working_dir = script_path.parent().unwrap_or_else(|| Path::new("."));
+
+        let (mut cmd, used_uv) = {
+            let uv_check = Command::new("uv").arg("--version").output();
+            if uv_check.is_ok() && uv_check.unwrap().status.success() {
+                let mut c = Command::new("uv");
+                c.arg("run").arg("--with").arg("pillow").arg("python").arg("-u").arg(&script_path);
+                (c, true)
             } else {
-                root.join("output_tutorial.mp4").to_string_lossy().to_string()
+                let mut c = Command::new("python");
+                c.arg("-u").arg(&script_path);
+                (c, false)
             }
-        });
-        let _ = app.emit("render-progress", "[PROGRESO] 100% Finalizado con éxito");
-        Ok(format!("Video generado con éxito en: {}", final_dest))
-    } else {
-        let err_msg = String::from_utf8_lossy(&output.stderr);
-        println!("[RUST-RENDER] ❌ Error en render:\n{}", err_msg);
-        Err(format!("Error en el renderizador: {}", err_msg))
-    }
+        };
+
+        cmd.env("PYTHONUNBUFFERED", "1");
+
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            const CREATE_NO_WINDOW: u32 = 0x08000000;
+            cmd.creation_flags(CREATE_NO_WINDOW);
+        }
+
+        if let Some(ref p_dir) = project_dir {
+            if !p_dir.trim().is_empty() {
+                cmd.arg("--project-dir").arg(p_dir);
+            }
+        }
+
+        if let Some(ref out) = output_path {
+            if !out.trim().is_empty() {
+                cmd.arg("--output").arg(out);
+            }
+        }
+
+        cmd.current_dir(working_dir);
+        cmd.stdout(Stdio::piped());
+        cmd.stderr(Stdio::piped());
+
+        println!("[RUST-RENDER] Modo de ejecución: {}", if used_uv { "⚡ UV Ultra-Fast" } else { "Standard Python" });
+
+        let child_res = cmd.spawn();
+        if let Err(e) = child_res {
+            let _ = tx.send(Err(format!("Error iniciando proceso de renderizado: {}", e)));
+            return;
+        }
+        let mut child = child_res.unwrap();
+
+        let stdout_handle = if let Some(stdout) = child.stdout.take() {
+            let app_clone = app.clone();
+            Some(std::thread::spawn(move || {
+                let reader = BufReader::new(stdout);
+                for line in reader.lines().flatten() {
+                    println!("[PY-RENDER] {}", line);
+                    if line.contains("[PROGRESO]") {
+                        let _ = app_clone.emit("render-progress", line.clone());
+                    }
+                }
+            }))
+        } else {
+            None
+        };
+
+        let stderr_handle = if let Some(stderr) = child.stderr.take() {
+            Some(std::thread::spawn(move || {
+                let reader = BufReader::new(stderr);
+                let mut err_lines = Vec::new();
+                for line in reader.lines().flatten() {
+                    println!("[PY-ERR] {}", line);
+                    err_lines.push(line);
+                }
+                err_lines.join("\n")
+            }))
+        } else {
+            None
+        };
+
+        let status_res = child.wait();
+        if let Err(e) = status_res {
+            let _ = tx.send(Err(format!("Error esperando renderizado: {}", e)));
+            return;
+        }
+        let status = status_res.unwrap();
+
+        if let Some(h) = stdout_handle {
+            let _ = h.join();
+        }
+        let stderr_output = stderr_handle.and_then(|h| h.join().ok()).unwrap_or_default();
+
+        if status.success() {
+            let final_dest = output_path.unwrap_or_else(|| {
+                if let Some(ref p_dir) = project_dir {
+                    PathBuf::from(p_dir).join("output_tutorial.mp4").to_string_lossy().to_string()
+                } else {
+                    working_dir.join("output_tutorial.mp4").to_string_lossy().to_string()
+                }
+            });
+            let _ = app.emit("render-progress", "[PROGRESO] 100% Finalizado con éxito");
+            let _ = tx.send(Ok(format!("Video generado con éxito en: {}", final_dest)));
+        } else {
+            println!("[RUST-RENDER] ❌ Error en render:\n{}", stderr_output);
+            let _ = tx.send(Err(format!("Error en el renderizador: {}", stderr_output)));
+        }
+    });
+
+    rx.recv().map_err(|e| format!("Error en canal de renderizado: {}", e))?
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

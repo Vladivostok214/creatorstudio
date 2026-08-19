@@ -45,8 +45,37 @@ class CreatorStudio {
 
   private async init() {
     this.unregisterOldServiceWorkers();
+    this.setupGlobalRenderProgressListener();
     // Siempre iniciar en la Landing Screen limpia
     this.renderLandingWelcome();
+  }
+
+  private setupGlobalRenderProgressListener() {
+    try {
+      listen<string>('render-progress', (event) => {
+        const payload = event.payload || '';
+        console.log('[FRONTEND-PROGRESS]', payload);
+
+        const progressBar = document.getElementById('render-progress-fill');
+        const pctText = document.getElementById('render-progress-pct');
+        const framesText = document.getElementById('render-progress-frames');
+        const btn = document.getElementById('btn-render-video') as HTMLButtonElement;
+
+        const match = payload.match(/\[PROGRESO\]\s*(\d+)%\s*(?:\((\d+\/\d+)\))?/);
+        if (match) {
+          const pct = match[1];
+          const frames = match[2] || '';
+          if (progressBar) progressBar.style.width = `${pct}%`;
+          if (pctText) pctText.textContent = `${pct}%`;
+          if (framesText && frames) framesText.textContent = `Fotogramas: ${frames}`;
+          if (btn && btn.disabled) {
+            btn.innerHTML = `<span class="spin-icon">⚡</span> Exportando (${pct}%)...`;
+          }
+        }
+      });
+    } catch (e) {
+      console.warn('Error configurando listener de progreso:', e);
+    }
   }
 
   private unregisterOldServiceWorkers() {
@@ -450,22 +479,40 @@ class CreatorStudio {
       this.saveProjectData(true);
     });
 
-    // Renderizar MP4
-    try {
-      listen<string>('render-progress', (event) => {
-        const payload = event.payload;
-        const btn = document.getElementById('btn-render-video') as HTMLButtonElement;
-        if (btn && btn.disabled) {
-          const match = payload.match(/(\d+%)/);
-          if (match) {
-            btn.innerHTML = `<span class="spin-icon">⚡</span> Exportando (${match[1]})...`;
-          }
-        }
-      });
-    } catch (e) {}
-
+    // Renderizar MP4 con Modal de Progreso
     document.getElementById('btn-render-video')?.addEventListener('click', async () => {
       const btn = document.getElementById('btn-render-video') as HTMLButtonElement;
+      let modal = document.getElementById('render-progress-modal');
+      
+      if (!modal) {
+        const modalHtml = `
+          <div id="render-progress-modal" class="render-modal-backdrop">
+            <div class="render-modal-card">
+              <div class="render-modal-glow-bg"></div>
+              <div class="render-modal-title">
+                <span class="spin-icon">⚡</span> Renderizando Tutorial MP4
+              </div>
+              <div class="render-modal-subtitle">
+                Motor Turbo UV en paralelo a 1080p 60fps / 30fps sin pérdidas
+              </div>
+              <div class="render-progress-track">
+                <div id="render-progress-fill" class="render-progress-bar"></div>
+              </div>
+              <div class="render-stats-row">
+                <span id="render-progress-pct" class="render-pct-text">0%</span>
+                <span id="render-progress-frames" class="render-frames-text">Iniciando procesador...</span>
+              </div>
+            </div>
+          </div>
+        `;
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        modal = document.getElementById('render-progress-modal');
+      }
+
+      const progressBar = document.getElementById('render-progress-fill');
+      const pctText = document.getElementById('render-progress-pct');
+      const framesText = document.getElementById('render-progress-frames');
+
       try {
         let defaultOutput = 'tutorial_render.mp4';
         if (this.projectDir) {
@@ -488,21 +535,34 @@ class CreatorStudio {
           return;
         }
 
+        if (progressBar) progressBar.style.width = '0%';
+        if (pctText) pctText.textContent = '0%';
+        if (framesText) framesText.textContent = 'Preparando fotogramas...';
+        if (modal) modal.classList.add('show');
+
         if (btn) {
           btn.disabled = true;
-          btn.innerHTML = '<span class="spin-icon">⚡</span> Preparando motor turbo UV...';
+          btn.innerHTML = '<span class="spin-icon">⚡</span> Exportando...';
         }
 
         await this.saveProjectData(false);
-        this.showToast('🚀 Renderizando video Full HD 1080p con máxima calidad y velocidad UV...', 5000);
 
         const result = await invoke<string>('start_render_job', {
           projectDir: this.projectDir || undefined,
           outputPath: chosenPath
         });
-        this.showToast(`🎉 ${result}`, 8000);
+
+        if (progressBar) progressBar.style.width = '100%';
+        if (pctText) pctText.textContent = '100%';
+        if (framesText) framesText.textContent = '¡Renderizado Completo!';
+
+        setTimeout(() => {
+          if (modal) modal.classList.remove('show');
+          this.showToast(`🎉 ${result}`, 8000);
+        }, 600);
       } catch (err) {
         console.error('Error al renderizar:', err);
+        if (modal) modal.classList.remove('show');
         this.showToast(`❌ Error en renderizado: ${err}`, 8000);
       } finally {
         if (btn) {
