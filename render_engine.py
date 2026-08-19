@@ -577,40 +577,66 @@ def render_single_frame(f_idx):
     # Aplicamos la máscara pre-calculada de esquinas redondeadas para que ningún screenshot sobresalga
     mockup_img.putalpha(mockup_corner_mask)
 
-    # 7. Mockup Fade-in & Scale tras Paso 1 (.mockup-stage-enter)
-    mockup_scale = 1.0
+    # 7. Mockup Transform (Posición y Escala por paso) + Fade-in Paso 1
+    m_transform = step.get("mockupTransform") or {}
+    user_offset_x = float(m_transform.get("offsetX", 0))
+    user_offset_y = float(m_transform.get("offsetY", 0))
+    user_scale = float(m_transform.get("scale", 1.0))
+
+    base_scale = user_scale
     mockup_alpha_mult = 1.0
     if step_idx == 1 and t_relative < 0.60:
         stage_enter_p = ease_out_cubic(t_relative / 0.60)
-        mockup_scale = lerp(0.96, 1.0, stage_enter_p)
+        base_scale = lerp(user_scale * 0.96, user_scale, stage_enter_p)
         mockup_alpha_mult = stage_enter_p
 
-    if mockup_scale == 1.0:
-        canvas.paste(mockup_shadow, (0, 0), mockup_shadow)
+    pos_x = int(MOCKUP_PX + user_offset_x)
+    pos_y = int(MOCKUP_PY + user_offset_y)
+
+    if base_scale == 1.0:
+        canvas.paste(mockup_shadow, (int(user_offset_x), int(user_offset_y)), mockup_shadow)
         if mockup_alpha_mult < 1.0:
             anim_mask = Image.new("L", (mockup_w_int, mockup_h_int), int(255 * mockup_alpha_mult))
-            canvas.paste(mockup_img, (int(MOCKUP_PX), int(MOCKUP_PY)), anim_mask)
+            canvas.paste(mockup_img, (pos_x, pos_y), anim_mask)
         else:
-            canvas.paste(mockup_img, (int(MOCKUP_PX), int(MOCKUP_PY)), mockup_img)
+            canvas.paste(mockup_img, (pos_x, pos_y), mockup_img)
+        
+        # Borde exterior 1px
+        draw_canv = ImageDraw.Draw(canvas)
+        draw_canv.rounded_rectangle(
+            [pos_x, pos_y, pos_x + mockup_w_int, pos_y + mockup_h_int],
+            radius=12,
+            outline=(255, 255, 255, int(31 * mockup_alpha_mult)),
+            width=1
+        )
     else:
-        nw = int(mockup_w_int * mockup_scale)
-        nh = int(mockup_h_int * mockup_scale)
+        nw = max(100, int(mockup_w_int * base_scale))
+        nh = max(100, int(mockup_h_int * base_scale))
         mockup_scaled = mockup_img.resize((nw, nh), Image.Resampling.LANCZOS)
-        nx = int(CANVAS_W / 2.0 - nw / 2.0)
-        ny = int(AVAIL_CENTER_Y - nh / 2.0)
-        canvas.paste(mockup_shadow, (0, 0), mockup_shadow)
-        canvas.paste(mockup_scaled, (nx, ny), mockup_scaled)
+        
+        # Escalar sombra
+        shadow_w = int(CANVAS_W * base_scale)
+        shadow_h = int(CANVAS_H * base_scale)
+        # Posición centrada respecto al offset
+        nx = int(pos_x + (mockup_w_int - nw) / 2.0)
+        ny = int(pos_y + (mockup_h_int - nh) / 2.0)
+        
+        canvas.paste(mockup_shadow, (int(user_offset_x), int(user_offset_y)), mockup_shadow)
+        if mockup_alpha_mult < 1.0:
+            anim_mask = Image.new("L", (nw, nh), int(255 * mockup_alpha_mult))
+            canvas.paste(mockup_scaled, (nx, ny), anim_mask)
+        else:
+            canvas.paste(mockup_scaled, (nx, ny), mockup_scaled)
+            
+        draw_canv = ImageDraw.Draw(canvas)
+        draw_canv.rounded_rectangle(
+            [nx, ny, nx + nw, ny + nh],
+            radius=int(12 * base_scale),
+            outline=(255, 255, 255, int(31 * mockup_alpha_mult)),
+            width=1
+        )
 
-    # Borde exterior 1px sutil del Mockup
-    draw_canv = ImageDraw.Draw(canvas)
-    draw_canv.rounded_rectangle(
-        [int(MOCKUP_PX), int(MOCKUP_PY), int(MOCKUP_PX) + mockup_w_int, int(MOCKUP_PY) + mockup_h_int],
-        radius=12,
-        outline=(255, 255, 255, int(31 * mockup_alpha_mult)),
-        width=1
-    )
-
-    # 8. Subtítulos Inferiores (#subtitle-box)
+    # 8. Subtítulos Inferiores (#subtitle-box) con Posición Libre
     transcript = step.get("transcript", "")
     marks = step.get("marks", [])
     if transcript:
@@ -629,8 +655,15 @@ def render_single_frame(f_idx):
         pad_y = 14
         cap_h = int(26 + pad_y * 2)  # 54px
         cap_w = max(540, int(total_text_w + pad_x * 2))
-        cap_x_cnt = int(CANVAS_W // 2)
-        cap_y = int(CANVAS_H - 54 - cap_h)
+        
+        # Posición configurable (default: centro inferior a 54px del borde)
+        sub_pos = step.get("subtitlePos")
+        if sub_pos and isinstance(sub_pos, dict):
+            cap_x_cnt = int(float(sub_pos.get("x", 0.5)) * CANVAS_W)
+            cap_y = int(float(sub_pos.get("y", (CANVAS_H - 54 - cap_h) / CANVAS_H)) * CANVAS_H)
+        else:
+            cap_x_cnt = int(CANVAS_W // 2)
+            cap_y = int(CANVAS_H - 54 - cap_h)
 
         rect_left = cap_x_cnt - cap_w // 2
         rect_top = cap_y
@@ -645,13 +678,21 @@ def render_single_frame(f_idx):
         canvas.paste(sub_shadow_layer, (0, 0), sub_shadow_layer)
 
         # Caja de subtítulo
+        sub_bg_color = parse_rgba(settings.get("subtitleBgColor"), default=(15, 23, 42, 242))
+        sub_border_rad = int(settings.get("subtitleBorderRadius", 0))
+
         sub_box_layer = Image.new("RGBA", (int(CANVAS_W), int(CANVAS_H)), (0, 0, 0, 0))
         draw_sbl = ImageDraw.Draw(sub_box_layer)
-        draw_sbl.rectangle([rect_left, rect_top, rect_right, rect_bottom], fill=(15, 23, 42, 242), outline=(255, 255, 255, 38), width=1)
+        if sub_border_rad > 0:
+            draw_sbl.rounded_rectangle([rect_left, rect_top, rect_right, rect_bottom], radius=sub_border_rad, fill=sub_bg_color, outline=(255, 255, 255, 38), width=1)
+        else:
+            draw_sbl.rectangle([rect_left, rect_top, rect_right, rect_bottom], fill=sub_bg_color, outline=(255, 255, 255, 38), width=1)
         canvas.paste(sub_box_layer, (0, 0), sub_box_layer)
 
         x_curr = cap_x_cnt - total_text_w / 2.0
         y_text = cap_y + pad_y - 2
+
+        sub_txt_color = parse_rgba(settings.get("subtitleTextColor"), default=(255, 255, 255, 255))
 
         if marks:
             for m_idx, mark in enumerate(marks):
@@ -667,12 +708,12 @@ def render_single_frame(f_idx):
                     
                     text_color = (255, 255, 255, 255)
                 else:
-                    text_color = (255, 255, 255, 178)
+                    text_color = (sub_txt_color[0], sub_txt_color[1], sub_txt_color[2], 178)
 
                 draw_canv.text((x_curr, y_text), mark["text"], font=font_to_use, fill=text_color)
                 x_curr += word_widths[m_idx] + word_gap
         else:
-            draw_canv.text((x_curr, y_text), transcript, font=font_sub, fill=(255, 255, 255, 255))
+            draw_canv.text((x_curr, y_text), transcript, font=font_sub, fill=sub_txt_color)
 
     final_frame = canvas.convert("RGB")
     return f_idx, final_frame.tobytes()

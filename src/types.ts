@@ -16,6 +16,17 @@ export interface ClickCoords {
   y: number;
 }
 
+export interface ElementPosition {
+  x: number; // Normalizado 0.0 a 1.0 (Canvas 1920x1080)
+  y: number;
+}
+
+export interface MockupTransform {
+  offsetX?: number; // Offset en píxeles (-500 a 500)
+  offsetY?: number; // Offset en píxeles (-300 a 300)
+  scale?: number;   // Multiplicador de escala (0.5 a 1.5)
+}
+
 export interface StepItem {
   id: string;
   type: 'section' | 'click';
@@ -29,6 +40,8 @@ export interface StepItem {
   boundingBox?: BoundingBox;
   clickCoords?: ClickCoords;
   marks: WordMark[];
+  subtitlePos?: ElementPosition;
+  mockupTransform?: MockupTransform;
 }
 
 export interface HeaderStyle {
@@ -51,6 +64,10 @@ export interface ProjectSettings {
   zoomFactor: number;
   clickAnimationDurationMs: number;
   headerStyle?: HeaderStyle;
+  fontFamily?: string;
+  subtitleBgColor?: string;
+  subtitleTextColor?: string;
+  subtitleBorderRadius?: number;
 }
 
 export interface ProjectData {
@@ -58,3 +75,4 @@ export interface ProjectData {
   settings: ProjectSettings;
   steps: StepItem[];
 }
+

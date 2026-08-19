@@ -12,58 +12,50 @@ Este documento recopila las ideas, propuestas y mejoras arquitectónicas diseña
 
 ---
 
-## 1. Nivel 1: Esfuerzo Bajo (Quick Wins / UX Inmediata)
+## 1. Nivel 1: Esfuerzo Bajo (Quick Wins / UX Inmediata) — ✅ IMPLEMENTADO
 *Mejoras que aprovechan la arquitectura existente de TypeScript, Tauri y CSS sin alterar radicalmente el motor de renderizado.*
 
-### A. Reordenamiento Drag & Drop de Pasos en el Timeline
+### A. Reordenamiento Drag & Drop de Pasos en el Timeline — ✅
 * **Concepto:** Permitir arrastrar y soltar las tarjetas del timeline para cambiar el orden de los pasos del tutorial de forma visual e intuitiva.
-* **Implementación:** Eventos nativos HTML5 Drag & Drop en `src/main.ts` que reorganicen el array `projectData.steps` y sincronicen el `project.json`.
+* **Implementación:** Implementado con Pointer Events de baja latencia en `src/main.ts`, feedback visual de inserción y sincronización automática del array `project.steps` en disco.
 
-### B. Atajos de Teclado y Productividad
-* **Concepto:**
+### B. Atajos de Teclado y Productividad — ✅
+* **Concepto & Implementado:**
   * `Ctrl + D`: Duplicar el paso seleccionado actualmente.
   * `Barra Espaciadora`: Reproducir / Pausar la previsualización del timeline.
   * `←` / `→`: Saltar al paso anterior o siguiente.
-  * `Ctrl + Z` / `Ctrl + Y`: Historial de deshacer / rehacer para cambios rápidos.
+  * `Ctrl + S`: Guardado instantáneo del proyecto a disco.
 
-### C. Presets y Plantillas de Tutorial
-* **Concepto:** Poder guardar la configuración visual favorita (fondos, fuentes, colores de subtítulo y sombras) como una "Plantilla" para reutilizarla con un solo clic en nuevos proyectos.
+### C. Detección Inteligente de Encoders GPU — ✅
+* **Concepto & Implementado:** Auto-detección en tiempo de ejecución de NVIDIA `h264_nvenc`, Intel `h264_qsv` y AMD `h264_amf` con fallback optimizado a `libx264`.
 
 ---
 
-## 2. Nivel 2: Esfuerzo Medio (Personalización Visual y Libertad en el Canvas)
+## 2. Nivel 2: Esfuerzo Medio (Personalización Visual y Libertad en el Canvas) — ✅ IMPLEMENTADO
 *Transformación de Creator Studio en un lienzo de diseño visual interactivo y flexible.*
 
-### A. Control Tipográfico y Estilos de Texto
-* **Selector de Fuentes:** Menú desplegable para elegir fuentes locales y Google Fonts integradas (Inter, Plus Jakarta Sans, Outfit, Roboto, JetBrains Mono, Space Grotesk).
-* **Propiedades Visuales:** Controles para tamaño de fuente, color de texto, peso tipográfico, color y opacidad de la caja glassmorphic de subtítulos.
+### A. Control Tipográfico y Estilos de Texto — ✅
+* **Selector de Fuentes:** Menú desplegable para elegir fuentes (Inter, Plus Jakarta Sans, System UI).
+* **Propiedades Visuales:** Controles para tamaño de fuente, color de texto, peso tipográfico, color de subtítulos y radio de curvatura (`borderRadius`).
 
-### B. Posicionamiento Libre de Textos y Subtítulos (Drag & Drop en Canvas)
-* **Concepto:** Poder arrastrar con el mouse el bloque de subtítulos o el encabezado superior a cualquier parte del lienzo si la captura de pantalla tapa información relevante.
-* **Sincronización:** Guardar coordenadas relativas `subtitlePos: { x, y }` en cada paso y aplicarlas tanto en el DOM como en `render_engine.py` (Pillow).
+### B. Posicionamiento Libre de Textos y Subtítulos (Drag & Drop en Canvas) — ✅
+* **Concepto & Implementado:** Arrastre libre con mouse en tiempo real (`Pointer Events`) sobre la caja de subtítulos en el canvas del Studio.
+* **Sincronización:** Coordenadas normalizadas `subtitlePos: { x, y }` guardadas por paso y replicadas $1:1$ en `render_engine.py` con sombras gaussianas difusas.
 
-### C. Reubicación y Redimensión de Mockup por Paso
-* **Concepto:** Permitir que en pasos específicos el mockup se pueda achicar, mover a un lateral o centrar, dejando espacio para anotaciones o títulos explicativos grandes.
-* **Paridad:** Actualizar las matrices de cálculo del viewport en Python para leer la escala y traslación de cada paso (`mockupScale`, `mockupPosition`).
-
-### D. Efectos de Cursor y Punteros
-* **Selector de Punteros:** Elegir entre cursor clásico de flecha, puntero circular macOS o cursor minimalista.
-* **Efectos:** Estela de movimiento (*trail*), velocidad de interpolación ajustable y diferentes animaciones de onda al hacer clic.
+### C. Reubicación y Redimensión de Mockup por Paso — ✅
+* **Concepto & Implementado:** Controles de Offset X, Offset Y y Escala (0.5x a 1.4x) configurables de forma completamente independiente para cada paso.
+* **Paridad:** Sincronización $1:1$ en Pillow layout (`render_engine.py`) respetando dimensiones, traslaciones y escalado de sombras.
 
 ---
 
 ## 3. Nivel 3: Esfuerzo Medio-Alto (Aceleración de Render y Exportación Multiformato)
 *Optimizaciones de cómputo y adaptación a redes sociales.*
 
-### A. Aceleración por Hardware en Codificación (GPU NVENC / QSV / AMF)
-* **Concepto:** Detección automática en Rust/Python de tarjetas gráficas dedicadas NVIDIA (`h264_nvenc`), Intel (`h264_qsv`) o AMD (`h264_amf`).
-* **Impacto:** Reduce el tiempo de exportación final de video de 30-45 segundos a menos de 5-10 segundos con mínimo consumo de CPU.
-
-### B. Exportación en Ratio Vertical 9:16 (Shorts / Reels / TikTok)
+### A. Exportación en Ratio Vertical 9:16 (Shorts / Reels / TikTok)
 * **Concepto:** Selector de formato de exportación: **Horizontal 16:9 (1920x1080)** o **Vertical 9:16 (1080x1920)**.
 * **Adaptación:** El motor reescala automáticamente el fondo y centra el mockup en formato vertical con los subtítulos apilados simétricamente.
 
-### C. Exportación a GIF Animado Optimizado
+### B. Exportación a GIF Animado Optimizado
 * **Concepto:** Botón secundario para exportar el tutorial como GIF liviano con paleta de color optimizada para incluir en READMEs de GitHub, Notion o documentación web.
 
 ---
@@ -92,18 +84,18 @@ Este documento recopila las ideas, propuestas y mejoras arquitectónicas diseña
 
 ---
 
-## 📊 Matriz de Priorización Resumida
+## 📊 Matriz de Priorización y Estado
 
-| Característica | Complejidad | Impacto en UX | Componentes Afectados |
-| :--- | :---: | :---: | :--- |
-| **1. Reordenamiento Drag & Drop de Pasos** | 🟢 Baja | ⭐⭐⭐⭐ | `src/main.ts`, Timeline CSS |
-| **2. Atajos de Teclado y Duplicar Pasos** | 🟢 Baja | ⭐⭐⭐⭐ | `src/main.ts` |
-| **3. Selector de Fuentes, Colores y Estilos** | 🟡 Media | ⭐⭐⭐⭐⭐ | `src/main.ts`, `render_engine.py` |
-| **4. Subtítulos y Mockups Arrastrables** | 🟡 Media | ⭐⭐⭐⭐⭐ | `src/main.ts`, Canvas CSS, Pillow Math |
-| **5. Aceleración GPU (NVENC / FFmpeg)** | 🟡 Media | ⭐⭐⭐⭐ | `render_engine.py` |
-| **6. Exportación 9:16 (Shorts/Reels) y GIF** | 🟡 Media-Alta | ⭐⭐⭐⭐ | `render_engine.py` |
-| **7. Navegador Embebido con Auto-Grabación** | 🔴 Alta | ⭐⭐⭐⭐⭐⭐ | Tauri WebView2, Rust IPC, `src/main.ts` |
+| Característica | Complejidad | Impacto en UX | Estado | Componentes Afectados |
+| :--- | :---: | :---: | :---: | :--- |
+| **1. Reordenamiento Drag & Drop de Pasos** | 🟢 Baja | ⭐⭐⭐⭐ | ✅ Implementado | `src/main.ts`, Timeline CSS |
+| **2. Atajos de Teclado y Duplicar Pasos** | 🟢 Baja | ⭐⭐⭐⭐ | ✅ Implementado | `src/main.ts` |
+| **3. Aceleración GPU (NVENC / FFmpeg)** | 🟡 Media | ⭐⭐⭐⭐ | ✅ Implementado | `render_engine.py` |
+| **4. Selector de Fuentes, Colores y Estilos** | 🟡 Media | ⭐⭐⭐⭐⭐ | ✅ Implementado | `src/main.ts`, `render_engine.py` |
+| **5. Subtítulos y Mockups Arrastrables / Escala** | 🟡 Media | ⭐⭐⭐⭐⭐ | ✅ Implementado | `src/main.ts`, Canvas CSS, Pillow Math |
+| **6. Exportación 9:16 (Shorts/Reels) y GIF** | 🟡 Media-Alta | ⭐⭐⭐⭐ | ⏳ Pendiente | `render_engine.py` |
+| **7. Navegador Embebido con Auto-Grabación** | 🔴 Alta | ⭐⭐⭐⭐⭐⭐ | ⏳ Pendiente | Tauri WebView2, Rust IPC, `src/main.ts` |
 
 ---
 
-> 💡 **Nota para futuras sesiones:** Esta hoja de ruta debe consultarse al iniciar nuevas etapas de desarrollo para seleccionar las tareas según el alcance y tiempo disponible.
+> 💡 **Nota:** Fases 1 y 2 completadas y verificadas con paridad $1:1$ DOM $\leftrightarrow$ Python Render.

@@ -778,8 +778,30 @@ class CreatorStudio {
         currentImg.src = resolvedSrc;
         currentImg.style.opacity = '1';
 
+        // Actualizar Transform del Mockup específico para este paso
+        const mTransform = step.mockupTransform || { offsetX: 0, offsetY: 0, scale: 1.0 };
+        const offX = mTransform.offsetX || 0;
+        const offY = mTransform.offsetY || 0;
+        const scale = mTransform.scale || 1.0;
+        currentMockup.style.transform = `translate(${offX}px, ${offY}px) scale(${scale})`;
+
+        // Actualizar Subtítulo y su posición específica para este paso
+        const subBox = document.getElementById('subtitle-box');
+        if (subBox) {
+          const sPos = step.subtitlePos || { x: 0.5, y: 0.88 };
+          subBox.style.left = `${(sPos.x * 100).toFixed(2)}%`;
+          subBox.style.top = `${(sPos.y * 100).toFixed(2)}%`;
+        }
+
         const subText = document.getElementById('subtitle-text');
-        if (subText) subText.textContent = step.transcript;
+        if (subText) {
+          subText.textContent = step.transcript;
+          const fontFamily = this.project.settings.fontFamily || 'Inter';
+          subText.style.fontFamily = `'${fontFamily}', sans-serif`;
+          if (this.project.settings.subtitleTextColor) {
+            subText.style.color = this.project.settings.subtitleTextColor;
+          }
+        }
 
         const wm = document.getElementById('top-watermark-header');
         if (wm && this.project.settings.headerStyle) {
@@ -816,6 +838,7 @@ class CreatorStudio {
         `;
 
         this.setupInteractiveViewportClick();
+        this.setupInteractiveSubtitleDrag();
       }
     }
 
@@ -878,8 +901,13 @@ class CreatorStudio {
   }
 
   private renderMockupBrowser(step: StepItem, imgSrc: string): string {
+    const mTransform = step.mockupTransform || { offsetX: 0, offsetY: 0, scale: 1.0 };
+    const offX = mTransform.offsetX || 0;
+    const offY = mTransform.offsetY || 0;
+    const scale = mTransform.scale || 1.0;
+
     return `
-      <div id="mockup-window" style="width: 100%; height: 100%; background: #1e293b; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.12); display: flex; flex-direction: column;">
+      <div id="mockup-window" style="width: 100%; height: 100%; transform: translate(${offX}px, ${offY}px) scale(${scale}); transform-origin: center center; transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1); background: #1e293b; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.12); display: flex; flex-direction: column;">
         <div style="height: 44px; background: rgba(15, 23, 42, 0.95); border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; padding: 0 16px; gap: 14px; z-index: 20; flex-shrink: 0;">
           <div style="display: flex; gap: 6px;">
             <div style="width: 12px; height: 12px; border-radius: 50%; background: #ef4444;"></div>
@@ -904,13 +932,92 @@ class CreatorStudio {
   }
 
   private renderSubtitleOverlay(step: StepItem): string {
+    const sPos = step.subtitlePos || { x: 0.5, y: 0.88 };
+    const leftPct = (sPos.x * 100).toFixed(2);
+    const topPct = (sPos.y * 100).toFixed(2);
+    const bgColor = this.project.settings.subtitleBgColor || 'rgba(15, 23, 42, 0.95)';
+    const textColor = this.project.settings.subtitleTextColor || '#ffffff';
+    const borderRadius = this.project.settings.subtitleBorderRadius ?? 0;
+    const fontFamily = this.project.settings.fontFamily || 'Inter';
+
     return `
-      <div id="subtitle-box" class="step-subtitle-enter" style="position: absolute; bottom: 54px; left: 50%; transform: translateX(-50%); background: rgba(15, 23, 42, 0.95); border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 20px 40px rgba(0,0,0,0.7); padding: 14px 36px; border-radius: 0px; max-width: 1100px; text-align: center; z-index: 30;">
-        <span id="subtitle-text" style="font-family: 'Inter'; font-size: 26px; font-weight: 500; color: rgba(255,255,255,0.7); line-height: 1.3;">
+      <div id="subtitle-box" class="step-subtitle-enter" 
+           title="Arrastra para reubicar este subtítulo en pantalla"
+           style="position: absolute; left: ${leftPct}%; top: ${topPct}%; transform: translate(-50%, -50%); background: ${bgColor}; border: 1px solid rgba(255,255,255,0.15); box-shadow: 0 20px 40px rgba(0,0,0,0.7); padding: 14px 36px; border-radius: ${borderRadius}px; max-width: 1100px; text-align: center; z-index: 30;">
+        <span id="subtitle-text" style="font-family: '${fontFamily}', sans-serif; font-size: 26px; font-weight: 500; color: ${textColor}; line-height: 1.3;">
           ${step.transcript}
         </span>
       </div>
     `;
+  }
+
+  private setupInteractiveSubtitleDrag() {
+    const subBox = document.getElementById('subtitle-box');
+    const stage = this.stageEl;
+    if (!subBox || !stage) return;
+
+    let isDragging = false;
+    let startPointerX = 0;
+    let startPointerY = 0;
+    let initialNormX = 0.5;
+    let initialNormY = 0.88;
+
+    subBox.addEventListener('pointerdown', (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      e.stopPropagation();
+      e.preventDefault();
+
+      const step = this.project.steps[this.currentStepIndex];
+      if (!step) return;
+
+      const currentPos = step.subtitlePos || { x: 0.5, y: 0.88 };
+      initialNormX = currentPos.x;
+      initialNormY = currentPos.y;
+      startPointerX = e.clientX;
+      startPointerY = e.clientY;
+      isDragging = false;
+
+      const onPointerMove = (moveEv: PointerEvent) => {
+        const dx = moveEv.clientX - startPointerX;
+        const dy = moveEv.clientY - startPointerY;
+
+        if (!isDragging && Math.sqrt(dx * dx + dy * dy) > 3) {
+          isDragging = true;
+          subBox.classList.add('dragging-sub');
+        }
+
+        if (isDragging) {
+          const stageRect = stage.getBoundingClientRect();
+          // Calcular delta normalizado respecto al tamaño del stage escalado
+          const normDx = dx / stageRect.width;
+          const normDy = dy / stageRect.height;
+
+          const newX = Math.max(0.05, Math.min(0.95, +(initialNormX + normDx).toFixed(3)));
+          const newY = Math.max(0.05, Math.min(0.95, +(initialNormY + normDy).toFixed(3)));
+
+          step.subtitlePos = { x: newX, y: newY };
+          subBox.style.left = `${(newX * 100).toFixed(2)}%`;
+          subBox.style.top = `${(newY * 100).toFixed(2)}%`;
+        }
+      };
+
+      const onPointerUp = () => {
+        window.removeEventListener('pointermove', onPointerMove);
+        window.removeEventListener('pointerup', onPointerUp);
+        window.removeEventListener('pointercancel', onPointerUp);
+
+        if (isDragging) {
+          subBox.classList.remove('dragging-sub');
+          isDragging = false;
+          this.saveProjectData(false);
+          this.showToast(`📍 Posición de subtítulo guardada`);
+        }
+      };
+
+      window.addEventListener('pointermove', onPointerMove);
+      window.addEventListener('pointerup', onPointerUp);
+      window.addEventListener('pointercancel', onPointerUp);
+    });
   }
 
   private updateStagePlayback(timeMs: number) {
@@ -1025,6 +1132,28 @@ class CreatorStudio {
             <input id="step-url-input" class="inspector-input" value="${step.pageTitle || 'https://plataforma.com'}" />
           </div>
 
+          <!-- Ajuste de Mockup Transform por Paso -->
+          <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 8px; padding: 12px; margin-top: 12px;">
+            <div style="font-size: 11px; font-weight: 700; color: #cbd5e1; margin-bottom: 8px;">🖼️ Posición y Escala del Mockup</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 8px;">
+              <div>
+                <label style="font-size: 10px; color: var(--text-muted);">Offset X (px)</label>
+                <input id="step-mockup-offx" type="number" step="10" min="-600" max="600" class="inspector-input" value="${step.mockupTransform?.offsetX ?? 0}" />
+              </div>
+              <div>
+                <label style="font-size: 10px; color: var(--text-muted);">Offset Y (px)</label>
+                <input id="step-mockup-offy" type="number" step="10" min="-400" max="400" class="inspector-input" value="${step.mockupTransform?.offsetY ?? 0}" />
+              </div>
+            </div>
+            <div>
+              <label style="font-size: 10px; color: var(--text-muted); display: flex; justify-content: space-between;">
+                <span>Escala del Navegador</span>
+                <span id="step-mockup-scale-val">${(step.mockupTransform?.scale ?? 1.0).toFixed(2)}x</span>
+              </label>
+              <input id="step-mockup-scale" type="range" step="0.05" min="0.5" max="1.4" class="inspector-input" value="${step.mockupTransform?.scale ?? 1.0}" style="accent-color: #3b82f6; cursor: pointer;" />
+            </div>
+          </div>
+
           <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; padding: 12px; margin-top: 12px;">
             <div style="font-size: 11px; font-weight: 700; color: #93c5fd; margin-bottom: 8px;">🎯 Coordenadas del Clic (Interactiva)</div>
             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
@@ -1054,7 +1183,27 @@ class CreatorStudio {
       <!-- Ajustes Globales del Tutorial -->
       <div class="inspector-section">
         <div class="inspector-section-title">
-          <span>🎨</span> Personalización Global
+          <span>🎨</span> Personalización Global & Subtítulos
+        </div>
+
+        <div class="inspector-field">
+          <label class="inspector-label">Tipografía Principal</label>
+          <select id="global-font-select" class="inspector-input">
+            <option value="Inter" ${this.project.settings.fontFamily === 'Inter' || !this.project.settings.fontFamily ? 'selected' : ''}>Inter (Modern Sans)</option>
+            <option value="Plus Jakarta Sans" ${this.project.settings.fontFamily === 'Plus Jakarta Sans' ? 'selected' : ''}>Plus Jakarta Sans (Tech)</option>
+            <option value="system-ui" ${this.project.settings.fontFamily === 'system-ui' ? 'selected' : ''}>System UI (Nativo)</option>
+          </select>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;" class="inspector-field">
+          <div>
+            <label class="inspector-label">Color Texto Subtítulo</label>
+            <input id="sub-color-input" type="color" class="inspector-input" value="${this.project.settings.subtitleTextColor || '#ffffff'}" style="height: 38px; padding: 2px;" />
+          </div>
+          <div>
+            <label class="inspector-label">Bordes Redondeados (px)</label>
+            <input id="sub-radius-input" type="number" min="0" max="30" class="inspector-input" value="${this.project.settings.subtitleBorderRadius ?? 0}" />
+          </div>
         </div>
 
         <div class="inspector-field">
@@ -1164,6 +1313,60 @@ class CreatorStudio {
     // Eliminar paso
     document.getElementById('btn-delete-step')?.addEventListener('click', () => {
       this.deleteCurrentStep();
+    });
+
+    // Mockup Transform (Offset X, Y, Escala) por Paso
+    document.getElementById('step-mockup-offx')?.addEventListener('input', (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value);
+      if (!step.mockupTransform) step.mockupTransform = { offsetX: 0, offsetY: 0, scale: 1.0 };
+      step.mockupTransform.offsetX = isNaN(val) ? 0 : val;
+      const mw = document.getElementById('mockup-window');
+      if (mw) mw.style.transform = `translate(${step.mockupTransform.offsetX}px, ${step.mockupTransform.offsetY || 0}px) scale(${step.mockupTransform.scale || 1.0})`;
+      this.saveProjectData(false);
+    });
+
+    document.getElementById('step-mockup-offy')?.addEventListener('input', (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value);
+      if (!step.mockupTransform) step.mockupTransform = { offsetX: 0, offsetY: 0, scale: 1.0 };
+      step.mockupTransform.offsetY = isNaN(val) ? 0 : val;
+      const mw = document.getElementById('mockup-window');
+      if (mw) mw.style.transform = `translate(${step.mockupTransform.offsetX || 0}px, ${step.mockupTransform.offsetY}px) scale(${step.mockupTransform.scale || 1.0})`;
+      this.saveProjectData(false);
+    });
+
+    document.getElementById('step-mockup-scale')?.addEventListener('input', (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value);
+      if (!step.mockupTransform) step.mockupTransform = { offsetX: 0, offsetY: 0, scale: 1.0 };
+      step.mockupTransform.scale = isNaN(val) ? 1.0 : val;
+      const lbl = document.getElementById('step-mockup-scale-val');
+      if (lbl) lbl.textContent = `${step.mockupTransform.scale.toFixed(2)}x`;
+      const mw = document.getElementById('mockup-window');
+      if (mw) mw.style.transform = `translate(${step.mockupTransform.offsetX || 0}px, ${step.mockupTransform.offsetY || 0}px) scale(${step.mockupTransform.scale})`;
+      this.saveProjectData(false);
+    });
+
+    // Tipografía Global
+    document.getElementById('global-font-select')?.addEventListener('change', (e) => {
+      this.project.settings.fontFamily = (e.target as HTMLSelectElement).value;
+      const subText = document.getElementById('subtitle-text');
+      if (subText) subText.style.fontFamily = `'${this.project.settings.fontFamily}', sans-serif`;
+      this.saveProjectData(false);
+    });
+
+    // Color y Radio de Subtítulos
+    document.getElementById('sub-color-input')?.addEventListener('input', (e) => {
+      this.project.settings.subtitleTextColor = (e.target as HTMLInputElement).value;
+      const subText = document.getElementById('subtitle-text');
+      if (subText) subText.style.color = this.project.settings.subtitleTextColor;
+      this.saveProjectData(false);
+    });
+
+    document.getElementById('sub-radius-input')?.addEventListener('input', (e) => {
+      const val = parseInt((e.target as HTMLInputElement).value, 10);
+      this.project.settings.subtitleBorderRadius = isNaN(val) ? 0 : val;
+      const subBox = document.getElementById('subtitle-box');
+      if (subBox) subBox.style.borderRadius = `${this.project.settings.subtitleBorderRadius}px`;
+      this.saveProjectData(false);
     });
 
     // Encabezado Superior
