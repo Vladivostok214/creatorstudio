@@ -75,35 +75,10 @@ fn create_blank_project(project_dir: String, project_title: String) -> Result<St
         let _ = fs::copy(&default_bg, &dest_bg);
     }
 
-    let initial_json = format!(r#"{{
-  "settings": {{
-    "title": "{}",
-    "resolution": {{ "width": 1920, "height": 1080 }},
-    "fps": 30,
-    "zoomFactor": 1.20,
-    "background": "assets/guideless_bg.webp",
-    "headerStyle": {{
-      "text": "{}",
-      "fontSize": 20,
-      "color": "#ffffff",
-      "hasShadow": false,
-      "shadowColor": "rgba(0, 0, 0, 0.95)",
-      "hasBackground": true,
-      "backgroundColor": "rgba(15, 23, 42, 0.75)",
-      "backgroundPadding": 10,
-      "borderRadius": 8
-    }}
-  }},
-  "steps": [
-    {{
-      "id": "step-intro",
-      "type": "section",
-      "title": "{}",
-      "transcript": "{}",
-      "duration": 3000
-    }}
-  ]
-}}"#, project_title, project_title, project_title, project_title);
+    let initial_json = format!(
+        "{{\n  \"settings\": {{\n    \"title\": \"{title}\",\n    \"resolution\": {{ \"width\": 1920, \"height\": 1080 }},\n    \"fps\": 30,\n    \"zoomFactor\": 1.20,\n    \"background\": \"assets/guideless_bg.webp\",\n    \"headerStyle\": {{\n      \"text\": \"{title}\",\n      \"fontSize\": 20,\n      \"color\": \"#ffffff\",\n      \"hasShadow\": false,\n      \"shadowColor\": \"rgba(0, 0, 0, 0.95)\",\n      \"hasBackground\": true,\n      \"backgroundColor\": \"rgba(15, 23, 42, 0.75)\",\n      \"backgroundPadding\": 10,\n      \"borderRadius\": 8\n    }}\n  }},\n  \"steps\": [\n    {{\n      \"id\": \"step_intro\",\n      \"type\": \"section\",\n      \"title\": \"{title}\",\n      \"transcript\": \"{title}\",\n      \"duration\": 3000\n    }}\n  ]\n}}",
+        title = project_title.replace('"', "\\\"")
+    );
 
     let project_file = dir.join("project.json");
     fs::write(&project_file, initial_json).map_err(|e| format!("Error escribiendo project.json: {}", e))?;

@@ -1,14 +1,10 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
+#!/usr/bin/env python3
 """
-CREATOR STUDIO PIXEL-PERFECT MULTI-PROJECT VIDEO RENDERER (V24)
-- Soporte para ejecución en cualquier proyecto vía `--project-dir <path>`
-- Soporte dinámico de fondos personalizados (`settings.background`)
-- Búsqueda recursiva/relativa de capturas en `assets/screenshots/`, `assets/` o rutas absolutas
-- Transiciones de Crossfade (0.4s) y Mockup Stage-Enter (0.6s)
-- Sombras con desenfoque gaussiano y Glow en subtítulos
-- Encabezado Superior (HeaderStyle) reactivo y condicional
+CREATOR STUDIO VIDEO RENDER ENGINE (V25 Turbo Multi-Project)
+- Pixel-Perfect 1:1 Matching con Studio Web DOM
+- Máscara redondeada integrada de 12px que corta perfectamente las esquinas de los screenshots
+- Centrado tipográfico exacto para el fondo del texto superior (Watermark)
+- Transiciones cinematográficas fluidas (Crossfade continuo entre pasos)
 """
 
 import os
@@ -20,38 +16,33 @@ import multiprocessing
 from concurrent.futures import ProcessPoolExecutor
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 
-if hasattr(sys.stdout, 'reconfigure'):
-    sys.stdout.reconfigure(encoding='utf-8')
+parser = argparse.ArgumentParser(description="Creator Studio Render Engine V25")
+parser.add_argument("--project-dir", default="", help="Directorio raíz del proyecto a renderizar")
+parser.add_argument("--output", default="", help="Ruta del archivo de video MP4 de salida")
+args, _ = parser.parse_known_args()
 
-parser = argparse.ArgumentParser()
-parser.add_argument("--project-dir", type=str, default="", help="Directorio raíz del proyecto a renderizar")
-parser.add_argument("--output", type=str, default="", help="Ruta de salida del video MP4")
-args = parser.parse_args()
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.abspath(args.project_dir) if args.project_dir else SCRIPT_DIR
+PROJECT_ASSETS_DIR = os.path.join(PROJECT_DIR, "assets")
+APP_PUBLIC_ASSETS = os.path.join(SCRIPT_DIR, "public", "assets")
 
-# Directorios de trabajo
-ENGINE_APP_DIR = os.path.dirname(os.path.abspath(__file__))
-APP_PUBLIC_ASSETS = os.path.join(ENGINE_APP_DIR, "public", "assets")
+OUTPUT_VIDEO_PATH = os.path.abspath(args.output) if args.output else os.path.join(PROJECT_DIR, "tutorial_render.mp4")
 
-if args.project_dir and os.path.exists(args.project_dir):
-    PROJECT_DIR = os.path.abspath(args.project_dir)
-else:
-    PROJECT_DIR = ENGINE_APP_DIR
+TIMELINE_PATH = ""
+for candidate in [
+    os.path.join(PROJECT_DIR, "project.json"),
+    os.path.join(PROJECT_DIR, "timeline.json"),
+    os.path.join(PROJECT_ASSETS_DIR, "timeline.json"),
+    os.path.join(SCRIPT_DIR, "public", "assets", "timeline.json"),
+    os.path.join(SCRIPT_DIR, "timeline.json")
+]:
+    if os.path.exists(candidate):
+        TIMELINE_PATH = candidate
+        break
 
-# Buscar archivo de proyecto (project.json o public/assets/timeline.json)
-if os.path.exists(os.path.join(PROJECT_DIR, "project.json")):
-    TIMELINE_PATH = os.path.join(PROJECT_DIR, "project.json")
-    PROJECT_ASSETS_DIR = os.path.join(PROJECT_DIR, "assets")
-elif os.path.exists(os.path.join(PROJECT_DIR, "public", "assets", "timeline.json")):
-    TIMELINE_PATH = os.path.join(PROJECT_DIR, "public", "assets", "timeline.json")
-    PROJECT_ASSETS_DIR = os.path.join(PROJECT_DIR, "public", "assets")
-elif os.path.exists(os.path.join(PROJECT_DIR, "timeline.json")):
-    TIMELINE_PATH = os.path.join(PROJECT_DIR, "timeline.json")
-    PROJECT_ASSETS_DIR = os.path.join(PROJECT_DIR, "assets")
-else:
-    TIMELINE_PATH = os.path.join(ENGINE_APP_DIR, "public", "assets", "timeline.json")
-    PROJECT_ASSETS_DIR = os.path.join(ENGINE_APP_DIR, "public", "assets")
-
-OUTPUT_VIDEO_PATH = args.output if args.output else os.path.join(PROJECT_DIR, "output_tutorial.mp4")
+if not TIMELINE_PATH:
+    print(f"[ERROR] No se encontró project.json ni timeline.json en {PROJECT_DIR}")
+    sys.exit(1)
 
 DEFAULT_SETTINGS = {
     "resolution": {"width": 1920, "height": 1080},
@@ -59,24 +50,21 @@ DEFAULT_SETTINGS = {
     "theme": "mac_dark",
     "background": "assets/guideless_bg.webp",
     "zoomFactor": 1.20,
-    "clickAnimationDurationMs": 1100,
     "headerStyle": {
-        "text": "Tutorial Creator Studio",
-        "fontSize": 20,
+        "text": "Tutorial Interactivo",
+        "fontSize": 22,
         "color": "#ffffff",
         "hasShadow": False,
         "shadowColor": "rgba(0, 0, 0, 0.95)",
         "hasBackground": True,
         "backgroundColor": "rgba(15, 23, 42, 0.75)",
         "backgroundPadding": 10,
-        "borderRadius": 8,
+        "borderRadius": 8
     }
 }
 
 def load_project():
-    if not os.path.exists(TIMELINE_PATH):
-        raise FileNotFoundError(f"No se encontró archivo de proyecto en {TIMELINE_PATH}")
-    with open(TIMELINE_PATH, 'r', encoding='utf-8') as f:
+    with open(TIMELINE_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
     if isinstance(data, list):
         steps = data
@@ -230,7 +218,7 @@ def init_worker():
     inter_bold_path = find_font("Inter-Bold.ttf")
     inter_med_path = find_font("Inter-Medium.ttf")
 
-    hdr_fsize = int(header_style.get("fontSize", 20))
+    hdr_fsize = int(header_style.get("fontSize", 22))
     if pjs_bold_path:
         f_intro = ImageFont.truetype(pjs_bold_path, 64)
         f_header = ImageFont.truetype(pjs_bold_path, hdr_fsize)
@@ -269,6 +257,11 @@ def init_worker():
     draw_pms.rounded_rectangle([sx1, sy1, sx2, sy2], radius=12, fill=(0, 0, 0, 217))
     pre_mockup_shadow = pre_mockup_shadow.filter(ImageFilter.GaussianBlur(radius=28))
 
+    # Pre-crear máscara con esquinas redondeadas de 12px para el Mockup completo
+    mockup_corner_mask = Image.new("L", (mockup_w_int, mockup_h_int), 0)
+    draw_mcm = ImageDraw.Draw(mockup_corner_mask)
+    draw_mcm.rounded_rectangle([0, 0, mockup_w_int, mockup_h_int], radius=12, fill=255)
+
     sc_dict = {}
     for s in steps:
         raw_shot = str(s.get("screenshot") or "")
@@ -286,6 +279,7 @@ def init_worker():
     _global_resources["font_address"] = f_addr
     _global_resources["bg_gradient"] = bg_grad
     _global_resources["mockup_shadow"] = pre_mockup_shadow
+    _global_resources["mockup_corner_mask"] = mockup_corner_mask
     _global_resources["screenshots"] = sc_dict
 
 def render_single_frame(f_idx):
@@ -298,6 +292,7 @@ def render_single_frame(f_idx):
     font_address = _global_resources["font_address"]
     bg_gradient = _global_resources["bg_gradient"]
     mockup_shadow = _global_resources["mockup_shadow"]
+    mockup_corner_mask = _global_resources["mockup_corner_mask"]
     screenshots = _global_resources["screenshots"]
 
     step_idx = 0
@@ -319,24 +314,34 @@ def render_single_frame(f_idx):
     # =========================================================================
     # PASO 1 (INTRO CINEMATOGRÁFICA)
     # =========================================================================
-    if step.get("type") == "section" or step_idx == 0:
-        fade_in = min(1.0, t_relative / 0.6)
-        alpha = int(fade_in * 255)
+    if step.get("type") == "section":
+        intro_text = step.get("transcript") or step.get("title") or settings.get("headerStyle", {}).get("text", "")
+        title_lines = split_intro_lines(intro_text, font_intro, max_w=1200)
 
-        title_text = step.get("transcript") or step.get("title") or "Tutorial Creator Studio"
-        title_lines = split_intro_lines(title_text, font_intro, max_w=1200)
+        step_dur = (t_end - t_start)
+        p = t_relative / step_dur if step_dur > 0 else 1.0
 
-        line_height = 76.0
-        total_txt_h = len(title_lines) * line_height
-        y_text_start = (CANVAS_H - total_txt_h) / 2.0
+        fade_in_time = 0.50
+        fade_out_time = 0.50
 
-        shadow_layer = Image.new("RGBA", (int(CANVAS_W), int(CANVAS_H)), (0, 0, 0, 0))
-        draw_shd = ImageDraw.Draw(shadow_layer)
+        if t_relative < fade_in_time:
+            alpha_norm = ease_out_cubic(t_relative / fade_in_time)
+        elif t_relative > (step_dur - fade_out_time):
+            alpha_norm = ease_out_cubic((step_dur - t_relative) / fade_out_time)
+        else:
+            alpha_norm = 1.0
+
+        alpha = int(alpha_norm * 255)
+
+        line_height = 76
+        total_text_h = len(title_lines) * line_height
+        y_text = (CANVAS_H - total_text_h) / 2.0
 
         text_layer = Image.new("RGBA", (int(CANVAS_W), int(CANVAS_H)), (0, 0, 0, 0))
+        shadow_layer = Image.new("RGBA", (int(CANVAS_W), int(CANVAS_H)), (0, 0, 0, 0))
         draw_txt = ImageDraw.Draw(text_layer)
+        draw_shd = ImageDraw.Draw(shadow_layer)
 
-        y_text = y_text_start
         for line in title_lines:
             line_w = draw_txt.textlength(line, font=font_intro)
             x_text = (CANVAS_W - line_w) / 2.0
@@ -355,7 +360,7 @@ def render_single_frame(f_idx):
     # PASOS 2+ (MOCKUP STAGE CON TRANSICIÓN FLUIDA Y HEADERSTYLE DINÁMICO)
     # =========================================================================
     
-    # 1. Encabezado Superior (.top-right-watermark)
+    # 1. Encabezado Superior (.top-right-watermark) - ALINEACIÓN Y CENTRADO EXACTO
     if header_style and header_style.get("text"):
         header_text = str(header_style.get("text", "")).strip()
         if header_text:
@@ -366,11 +371,13 @@ def render_single_frame(f_idx):
             dummy_calc = ImageDraw.Draw(canvas)
             text_w = dummy_calc.textlength(header_text, font=font_header)
             
+            # Cálculo de bounding box exacto y métricas de fuente
             bbox = font_header.getbbox(header_text)
-            text_glyph_h = (bbox[3] - bbox[1]) if bbox else 20
+            # bbox = (left, top, right, bottom)
+            text_glyph_h = (bbox[3] - bbox[1]) if bbox else 22
 
             box_w = int(text_w + pad_x * 2)
-            box_h = int(text_glyph_h + pad_y * 2 + 4)
+            box_h = int(text_glyph_h + pad_y * 2 + 2)
 
             box_right = CANVAS_W - 64.0
             box_left = box_right - box_w
@@ -392,8 +399,9 @@ def render_single_frame(f_idx):
                     width=1
                 )
 
+            # Centrado vertical perfecto del texto compensando el offset del font glyph
             tx = box_left + pad_x
-            ty = box_top + pad_y - 1.0
+            ty = box_top + pad_y - (bbox[1] if bbox else 0)
 
             # Sombra de Texto Reactiva
             has_shadow = bool(header_style.get("hasShadow", False))
@@ -460,19 +468,22 @@ def render_single_frame(f_idx):
     viewport_surface.paste(sc_resized, (offset_x, offset_y))
 
     # =========================================================================
-    # TRANSICIONES FLUIDAS ENTRE PASOS (Crossfade 0.4s)
+    # TRANSICIONES FLUIDAS ENTRE PASOS (Crossfade Suave 0.45s)
     # =========================================================================
-    crossfade_dur = 0.40
-    if step_idx > 1 and prev_step and prev_step.get("type") != "section" and t_relative < crossfade_dur:
+    crossfade_dur = 0.45
+    if step_idx >= 1 and prev_step and prev_step.get("type") != "section" and t_relative < crossfade_dur:
         prev_raw_shot = str(prev_step.get("screenshot") or "")
         prev_sc = screenshots.get(prev_raw_shot)
         if prev_sc:
+            # Estado del paso previo con su escala o sin escala
             prev_resized = prev_sc.resize((mockup_w_int, page_h_int), Image.Resampling.LANCZOS)
             prev_fade_surface = Image.new("RGBA", (mockup_w_int, page_h_int), (0, 0, 0, 0))
             prev_fade_surface.paste(prev_resized, (0, 0))
             
             fade_progress = t_relative / crossfade_dur
             alpha_prev = int((1.0 - ease_in_out_cubic(fade_progress)) * 255)
+            
+            # Aplicar canal alfa suave
             prev_fade_surface.putalpha(Image.new("L", (mockup_w_int, page_h_int), alpha_prev))
             viewport_surface.paste(prev_fade_surface, (0, 0), prev_fade_surface)
 
@@ -562,7 +573,11 @@ def render_single_frame(f_idx):
 
     mockup_img.paste(header_surface, (0, 0))
 
-    # 6. Mockup Fade-in & Scale tras Paso 1 (.mockup-stage-enter)
+    # 6. Recorte Perfecto de Esquinas (overflow: hidden con radio 12px)
+    # Aplicamos la máscara pre-calculada de esquinas redondeadas para que ningún screenshot sobresalga
+    mockup_img.putalpha(mockup_corner_mask)
+
+    # 7. Mockup Fade-in & Scale tras Paso 1 (.mockup-stage-enter)
     mockup_scale = 1.0
     mockup_alpha_mult = 1.0
     if step_idx == 1 and t_relative < 0.60:
@@ -570,24 +585,23 @@ def render_single_frame(f_idx):
         mockup_scale = lerp(0.96, 1.0, stage_enter_p)
         mockup_alpha_mult = stage_enter_p
 
-    mockup_mask = Image.new("L", (mockup_w_int, mockup_h_int), int(255 * mockup_alpha_mult))
-    draw_mask = ImageDraw.Draw(mockup_mask)
-    draw_mask.rounded_rectangle([0, 0, mockup_w_int, mockup_h_int], radius=12, fill=int(255 * mockup_alpha_mult))
-
     if mockup_scale == 1.0:
         canvas.paste(mockup_shadow, (0, 0), mockup_shadow)
-        canvas.paste(mockup_img, (int(MOCKUP_PX), int(MOCKUP_PY)), mockup_mask)
+        if mockup_alpha_mult < 1.0:
+            anim_mask = Image.new("L", (mockup_w_int, mockup_h_int), int(255 * mockup_alpha_mult))
+            canvas.paste(mockup_img, (int(MOCKUP_PX), int(MOCKUP_PY)), anim_mask)
+        else:
+            canvas.paste(mockup_img, (int(MOCKUP_PX), int(MOCKUP_PY)), mockup_img)
     else:
         nw = int(mockup_w_int * mockup_scale)
         nh = int(mockup_h_int * mockup_scale)
         mockup_scaled = mockup_img.resize((nw, nh), Image.Resampling.LANCZOS)
-        mask_scaled = mockup_mask.resize((nw, nh), Image.Resampling.LANCZOS)
         nx = int(CANVAS_W / 2.0 - nw / 2.0)
         ny = int(AVAIL_CENTER_Y - nh / 2.0)
         canvas.paste(mockup_shadow, (0, 0), mockup_shadow)
-        canvas.paste(mockup_scaled, (nx, ny), mask_scaled)
+        canvas.paste(mockup_scaled, (nx, ny), mockup_scaled)
 
-    # Borde exterior 1px
+    # Borde exterior 1px sutil del Mockup
     draw_canv = ImageDraw.Draw(canvas)
     draw_canv.rounded_rectangle(
         [int(MOCKUP_PX), int(MOCKUP_PY), int(MOCKUP_PX) + mockup_w_int, int(MOCKUP_PY) + mockup_h_int],
@@ -596,7 +610,7 @@ def render_single_frame(f_idx):
         width=1
     )
 
-    # 7. Subtítulos Inferiores (#subtitle-box)
+    # 8. Subtítulos Inferiores (#subtitle-box)
     transcript = step.get("transcript", "")
     marks = step.get("marks", [])
     if transcript:
@@ -665,7 +679,7 @@ def render_single_frame(f_idx):
 
 def main():
     print("=" * 70)
-    print("  CREATOR STUDIO PIXEL-PERFECT MULTI-PROJECT VIDEO RENDERER (V24)")
+    print("  CREATOR STUDIO PIXEL-PERFECT MULTI-PROJECT VIDEO RENDER ENGINE (V25)")
     print("=" * 70)
     print(f"[PROYECTO] Directorio: {PROJECT_DIR}")
     print(f"[TIMELINE] Archivo: {TIMELINE_PATH} ({len(steps)} pasos cargados)")

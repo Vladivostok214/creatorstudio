@@ -6,6 +6,7 @@ import type { ProjectData, StepItem } from './types';
 
 class CreatorStudio {
   private projectDir: string = '';
+  public isProjectLoaded: boolean = false;
   private project: ProjectData = {
     title: 'Mi Tutorial Interactivo',
     settings: {
@@ -44,12 +45,8 @@ class CreatorStudio {
 
   private async init() {
     this.unregisterOldServiceWorkers();
-    await this.loadInitialProject();
-    this.renderLayout();
-    this.setupResizeObserver();
-    this.bindEvents();
-    this.updateStageContent();
-    this.updateInspector();
+    // Siempre iniciar en la Landing Screen limpia
+    this.renderLandingWelcome();
   }
 
   private unregisterOldServiceWorkers() {
@@ -62,66 +59,135 @@ class CreatorStudio {
     }
   }
 
-  private async loadInitialProject() {
-    let loaded = false;
+  private renderLandingWelcome() {
+    let app = document.getElementById('app');
+    if (!app) {
+      app = document.createElement('div');
+      app.id = 'app';
+      document.body.appendChild(app);
+    }
+
+    app.innerHTML = `
+      <div class="landing-container">
+        <!-- Ambient Glow -->
+        <div class="landing-glow"></div>
+
+        <div class="landing-card">
+          <div class="landing-header">
+            <div style="font-size: 40px; margin-bottom: 12px;">✨</div>
+            <h1 class="landing-title">Creator Studio</h1>
+            <p class="landing-subtitle">Editor de video tutorial interactivo con renderizado pixel-perfect a 1080p</p>
+          </div>
+
+          <div class="landing-actions">
+            <!-- Crear Nuevo Proyecto -->
+            <div id="card-new-project" class="landing-action-box">
+              <div class="action-icon">➕</div>
+              <div class="action-content">
+                <div class="action-title">Crear Nuevo Proyecto</div>
+                <div class="action-desc">Selecciona una carpeta para iniciar un tutorial desde cero con tus capturas.</div>
+              </div>
+            </div>
+
+            <!-- Abrir Proyecto Existente -->
+            <div id="card-open-project" class="landing-action-box">
+              <div class="action-icon">📂</div>
+              <div class="action-content">
+                <div class="action-title">Abrir Proyecto Existente</div>
+                <div class="action-desc">Abre un archivo project.json o la carpeta de un tutorial ya creado.</div>
+              </div>
+            </div>
+          </div>
+
+          <div class="landing-footer">
+            <span>Versión 1.0.0 • Motor de Renderizado Nativo V24</span>
+          </div>
+        </div>
+      </div>
+    `;
+
+    document.getElementById('card-new-project')?.addEventListener('click', () => this.handleNewProjectFlow());
+    document.getElementById('card-open-project')?.addEventListener('click', () => this.handleOpenProjectFlow());
+  }
+
+  private async handleNewProjectFlow() {
     try {
-      const localSaved = localStorage.getItem('creator_studio_project');
-      const localDir = localStorage.getItem('creator_studio_project_dir');
-      if (localDir) this.projectDir = localDir;
+      const chosenFolder = await open({
+        directory: true,
+        multiple: false,
+        title: 'Seleccionar carpeta donde crear el nuevo proyecto'
+      });
 
-      if (localSaved) {
-        const raw = JSON.parse(localSaved);
-        const stepsData = Array.isArray(raw) ? raw : (raw.steps || []);
-        if (raw.settings) {
-          this.project.settings = { ...this.project.settings, ...raw.settings };
-        }
-        if (raw.title) this.project.title = raw.title;
-        if (stepsData.length > 0) {
-          this.project.steps = stepsData;
-          loaded = true;
-        }
-      }
+      if (!chosenFolder) return;
+      const folderStr = Array.isArray(chosenFolder) ? chosenFolder[0] : chosenFolder;
+      if (!folderStr) return;
+
+      const projectName = prompt('Nombre del nuevo proyecto:', 'Mi Tutorial Interactivo') || 'Mi Tutorial Interactivo';
+      
+      await invoke<string>('create_blank_project', {
+        projectDir: folderStr,
+        projectTitle: projectName
+      });
+
+      this.projectDir = folderStr;
+      localStorage.setItem('creator_studio_project_dir', folderStr);
+
+      this.createNewBlankProjectState(projectName);
+      this.saveProjectData();
+      
+      this.isProjectLoaded = true;
+      this.renderLayout();
+      this.setupResizeObserver();
+      this.bindEvents();
+      this.updateStageContent();
+      this.updateInspector();
+
+      this.showToast(`✨ Proyecto creado en: ${folderStr}`);
     } catch (e) {
-      console.warn('LocalStorage error:', e);
+      console.error('Error creando proyecto:', e);
+      this.showToast(`❌ Error creando proyecto: ${e}`);
     }
+  }
 
-    if (!loaded) {
-      try {
-        const cacheBuster = `?t=${Date.now()}`;
-        let res = await fetch(`/assets/timeline.json${cacheBuster}`, { cache: 'no-store' });
-        if (!res.ok) {
-          res = await fetch(`/timeline.json${cacheBuster}`, { cache: 'no-store' });
-        }
-        if (res.ok) {
-          const raw = await res.json();
-          const stepsData = Array.isArray(raw) ? raw : (raw.steps || []);
-          if (raw.settings) {
-            this.project.settings = { ...this.project.settings, ...raw.settings };
-          }
-          if (raw.title) this.project.title = raw.title;
+  private async handleOpenProjectFlow() {
+    try {
+      const chosen = await open({
+        directory: false,
+        multiple: false,
+        title: 'Abrir archivo project.json o timeline.json',
+        filters: [{ name: 'JSON Project', extensions: ['json'] }]
+      });
 
-          this.project.steps = stepsData.map((item: any, i: number) => ({
-            id: item.id || `step-${i + 1}`,
-            type: item.type || (i === 0 ? 'section' : 'click'),
-            title: item.title || `Paso ${i + 1}`,
-            transcript: item.transcript || '',
-            audio: item.audio || null,
-            screenshot: item.screenshot || 'assets/screenshot_1.webp',
-            duration: item.duration || (i === 0 ? 3000 : 4500),
-            pageTitle: item.pageTitle || 'https://plataforma.com',
-            enableZoom: item.type !== 'section',
-            boundingBox: item.boundingBox || { x: 0.5, y: 0.5, width: 0.16, height: 0.08 },
-            clickCoords: item.clickCoords || { x: 0.5, y: 0.5 },
-            marks: item.marks || [],
-          }));
-        }
-      } catch (e) {
-        console.warn('Fallback template load notice:', e);
-      }
-    }
+      if (!chosen) return;
+      const filePath = Array.isArray(chosen) ? chosen[0] : chosen;
+      if (!filePath) return;
 
-    if (this.project.steps.length === 0) {
-      this.createNewBlankProjectState('Nuevo Tutorial');
+      const content = await invoke<string>('load_project_file', { filePath });
+      const raw = JSON.parse(content);
+
+      const parentDir = filePath.replace(/[\/\\][^\/\\]+$/, '');
+      this.projectDir = parentDir;
+      localStorage.setItem('creator_studio_project_dir', parentDir);
+
+      this.project.title = raw.title || 'Tutorial Cargado';
+      if (raw.settings) this.project.settings = { ...this.project.settings, ...raw.settings };
+      this.project.steps = raw.steps || [];
+
+      this.currentStepIndex = 0;
+      this.currentTimeMs = 0;
+      this.saveProjectData();
+
+      this.isProjectLoaded = true;
+      this.renderLayout();
+      this.setupResizeObserver();
+      this.bindEvents();
+      this.updateStageContent();
+      this.updateInspector();
+
+      this.showToast(`📂 Proyecto cargado exitosamente`);
+    } catch (e) {
+      console.error('Error abriendo proyecto:', e);
+      this.showToast(`❌ Error abriendo proyecto: ${e}`);
     }
   }
 
@@ -189,7 +255,7 @@ class CreatorStudio {
         <!-- Top Bar -->
         <header class="top-bar">
           <div style="display: flex; align-items: center; gap: 12px;">
-            <div style="display: flex; align-items: center; gap: 8px;">
+            <div style="display: flex; align-items: center; gap: 8px; cursor: pointer;" id="brand-logo" title="Volver al menú inicial">
               <span style="font-size: 18px;">✨</span>
               <span style="font-family: 'Plus Jakarta Sans'; font-weight: 700; font-size: 15px; letter-spacing: -0.3px;">Creator Studio</span>
               <span style="font-size: 10px; background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid rgba(96, 165, 250, 0.3);">PRO</span>
@@ -204,13 +270,16 @@ class CreatorStudio {
             <button id="btn-open-project" class="btn-glass" title="Abrir proyecto existente">
               <span>📂</span> Abrir
             </button>
+            <button id="btn-close-project" class="btn-glass" title="Cerrar proyecto y volver a la pantalla de bienvenida">
+              <span>🚪</span> Cerrar
+            </button>
 
             <div style="height: 16px; width: 1px; background: var(--bg-panel-border);"></div>
 
-            <input id="project-title-input" value="${this.project.title}" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08); color: var(--text-main); font-size: 13px; font-weight: 500; padding: 4px 10px; border-radius: 6px; outline: none; width: 260px;" placeholder="Título del tutorial..." />
+            <input id="project-title-input" value="${this.project.title}" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08); color: var(--text-main); font-size: 13px; font-weight: 500; padding: 4px 10px; border-radius: 6px; outline: none; width: 240px;" placeholder="Título del tutorial..." />
             
-            <span id="project-folder-label" style="font-size: 11px; color: var(--text-muted); font-family: monospace; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-              ${this.projectDir ? `📁 ${this.projectDir.split(/[\/\\]/).pop()}` : '📁 Proyecto en memoria'}
+            <span id="project-folder-label" style="font-size: 11px; color: var(--text-muted); font-family: monospace; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${this.projectDir || 'Proyecto en memoria'}">
+              ${this.projectDir ? `📁 ${this.projectDir.split(/[\/\\]/).pop()}` : '📁 En memoria'}
             </span>
           </div>
 
@@ -254,6 +323,10 @@ class CreatorStudio {
               <button id="btn-play-pause" class="btn-glass" style="min-width: 80px;">▶ Play</button>
               <button id="btn-prev-step" class="btn-glass" title="Paso Anterior">⏮</button>
               <button id="btn-next-step" class="btn-glass" title="Siguiente Paso">⏭</button>
+              <div style="height: 16px; width: 1px; background: var(--bg-panel-border); margin: 0 4px;"></div>
+              <button id="btn-timeline-delete-step" class="btn-glass" style="color: #f87171; border-color: rgba(239, 68, 68, 0.35); background: rgba(239, 68, 68, 0.08);" title="Eliminar el paso actualmente seleccionado">
+                <span>🗑️</span> Eliminar Paso
+              </button>
               <div style="height: 16px; width: 1px; background: var(--bg-panel-border); margin: 0 4px;"></div>
               <span id="timeline-time-display" style="font-size: 12px; font-family: monospace; color: var(--text-muted);">00:00.00 / 00:00.00</span>
             </div>
@@ -312,6 +385,16 @@ class CreatorStudio {
   }
 
   private bindEvents() {
+    // Volver a Landing
+    document.getElementById('btn-close-project')?.addEventListener('click', () => {
+      this.saveProjectData(false);
+      localStorage.removeItem('creator_studio_project');
+      localStorage.removeItem('creator_studio_project_dir');
+      this.projectDir = '';
+      this.isProjectLoaded = false;
+      this.renderLandingWelcome();
+    });
+
     // Título del proyecto
     document.getElementById('project-title-input')?.addEventListener('input', (e) => {
       const val = (e.target as HTMLInputElement).value;
@@ -328,81 +411,10 @@ class CreatorStudio {
     });
 
     // Crear Nuevo Proyecto
-    document.getElementById('btn-new-project')?.addEventListener('click', async () => {
-      try {
-        const chosenFolder = await open({
-          directory: true,
-          multiple: false,
-          title: 'Seleccionar carpeta donde crear el nuevo proyecto'
-        });
-
-        if (!chosenFolder) return;
-        const folderStr = Array.isArray(chosenFolder) ? chosenFolder[0] : chosenFolder;
-        if (!folderStr) return;
-
-        const projectName = prompt('Nombre del nuevo proyecto:', 'Mi Nuevo Tutorial') || 'Mi Nuevo Tutorial';
-        
-        const createdFile = await invoke<string>('create_blank_project', {
-          projectDir: folderStr,
-          projectTitle: projectName
-        });
-
-        this.projectDir = folderStr;
-        localStorage.setItem('creator_studio_project_dir', folderStr);
-
-        this.createNewBlankProjectState(projectName);
-        this.saveProjectData();
-        this.renderLayout();
-        this.bindEvents();
-        this.updateStageContent();
-        this.updateInspector();
-
-        this.showToast(`✨ Proyecto creado en: ${createdFile}`);
-      } catch (e) {
-        console.error('Error creando proyecto:', e);
-        this.showToast(`❌ Error creando proyecto: ${e}`);
-      }
-    });
+    document.getElementById('btn-new-project')?.addEventListener('click', () => this.handleNewProjectFlow());
 
     // Abrir Proyecto Existente
-    document.getElementById('btn-open-project')?.addEventListener('click', async () => {
-      try {
-        const chosen = await open({
-          directory: false,
-          multiple: false,
-          title: 'Abrir archivo project.json o timeline.json',
-          filters: [{ name: 'JSON Project', extensions: ['json'] }]
-        });
-
-        if (!chosen) return;
-        const filePath = Array.isArray(chosen) ? chosen[0] : chosen;
-        if (!filePath) return;
-
-        const content = await invoke<string>('load_project_file', { filePath });
-        const raw = JSON.parse(content);
-
-        const parentDir = filePath.replace(/[\/\\][^\/\\]+$/, '');
-        this.projectDir = parentDir;
-        localStorage.setItem('creator_studio_project_dir', parentDir);
-
-        this.project.title = raw.title || 'Tutorial Cargado';
-        if (raw.settings) this.project.settings = { ...this.project.settings, ...raw.settings };
-        this.project.steps = raw.steps || [];
-
-        this.currentStepIndex = 0;
-        this.currentTimeMs = 0;
-        this.saveProjectData();
-        this.renderLayout();
-        this.bindEvents();
-        this.updateStageContent();
-        this.updateInspector();
-
-        this.showToast(`📂 Proyecto cargado exitosamente`);
-      } catch (e) {
-        console.error('Error abriendo proyecto:', e);
-        this.showToast(`❌ Error abriendo proyecto: ${e}`);
-      }
-    });
+    document.getElementById('btn-open-project')?.addEventListener('click', () => this.handleOpenProjectFlow());
 
     // Añadir Paso con Captura (JPG/PNG)
     document.getElementById('btn-add-screenshot-step')?.addEventListener('click', async () => {
@@ -425,6 +437,11 @@ class CreatorStudio {
     });
     document.getElementById('btn-next-step')?.addEventListener('click', () => {
       if (this.currentStepIndex < this.project.steps.length - 1) this.selectStep(this.currentStepIndex + 1);
+    });
+
+    // Eliminar Paso desde Timeline
+    document.getElementById('btn-timeline-delete-step')?.addEventListener('click', () => {
+      this.deleteCurrentStep();
     });
 
     // Guardar Proyecto
@@ -926,8 +943,8 @@ class CreatorStudio {
           <button id="btn-auto-marks" class="btn-glass" style="flex: 1; justify-content: center;">
             <span>⚡</span> Auto-Sincronizar
           </button>
-          <button id="btn-delete-step" class="btn-glass" style="color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
-            <span>🗑️</span>
+          <button id="btn-delete-step" class="btn-glass" style="color: #f87171; border-color: rgba(239, 68, 68, 0.4); background: rgba(239, 68, 68, 0.1);" title="Eliminar este paso">
+            <span>🗑️</span> Eliminar Paso
           </button>
         </div>
       </div>
@@ -1044,15 +1061,7 @@ class CreatorStudio {
 
     // Eliminar paso
     document.getElementById('btn-delete-step')?.addEventListener('click', () => {
-      if (this.project.steps.length <= 1) {
-        alert('No puedes eliminar el único paso restante.');
-        return;
-      }
-      if (confirm(`¿Eliminar el paso ${this.currentStepIndex + 1}?`)) {
-        this.project.steps.splice(this.currentStepIndex, 1);
-        this.currentStepIndex = Math.max(0, this.currentStepIndex - 1);
-        this.selectStep(this.currentStepIndex);
-      }
+      this.deleteCurrentStep();
     });
 
     // Encabezado Superior
@@ -1117,6 +1126,21 @@ class CreatorStudio {
         this.showToast(`❌ Error actualizando fondo: ${e}`);
       }
     });
+  }
+
+  private deleteCurrentStep() {
+    if (this.project.steps.length <= 1) {
+      alert('No puedes eliminar el único paso restante del proyecto.');
+      return;
+    }
+    const stepNum = this.currentStepIndex + 1;
+    if (confirm(`¿Estás seguro de eliminar el paso #${stepNum}?`)) {
+      this.project.steps.splice(this.currentStepIndex, 1);
+      this.currentStepIndex = Math.max(0, Math.min(this.currentStepIndex, this.project.steps.length - 1));
+      this.selectStep(this.currentStepIndex);
+      this.saveProjectData(false);
+      this.showToast(`🗑️ Paso #${stepNum} eliminado`);
+    }
   }
 
   private autoGenerateMarks(step: StepItem) {
