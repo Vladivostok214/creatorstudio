@@ -2,16 +2,13 @@
 # -*- coding: utf-8 -*-
 
 """
-CREATOR STUDIO PIXEL-PERFECT VIDEO RENDERER (V23 - Smooth Step Crossfade Transitions & Reactive HeaderStyle)
-- Emulación 100% matemática y visual del Studio DOM:
-  * Transiciones Fluidas entre Pasos (Crossfade):
-      - Transición suave de disolución cruzada (0.4s) al cambiar de captura entre pasos continuos.
-      - Animación de entrada suave (Scale + Fade-in) de Mockup tras la Intro del Paso 1.
-  * Encabezado Superior (HeaderStyle) 100% Reactivo:
-      - Sombra condicional estricta: `hasShadow: false` elimina por completo la sombra.
-      - Fondo rectangular condicional: `hasBackground`, `backgroundPadding`, `backgroundColor`, `borderRadius`.
-      - Medición precisa de texto con `getbbox()` y tamaño `fontSize` dinámico.
-  * Aceleración Multiproceso con UV y Pillow.
+CREATOR STUDIO PIXEL-PERFECT MULTI-PROJECT VIDEO RENDERER (V24)
+- Soporte para ejecución en cualquier proyecto vía `--project-dir <path>`
+- Soporte dinámico de fondos personalizados (`settings.background`)
+- Búsqueda recursiva/relativa de capturas en `assets/screenshots/`, `assets/` o rutas absolutas
+- Transiciones de Crossfade (0.4s) y Mockup Stage-Enter (0.6s)
+- Sombras con desenfoque gaussiano y Glow en subtítulos
+- Encabezado Superior (HeaderStyle) reactivo y condicional
 """
 
 import os
@@ -27,16 +24,34 @@ if hasattr(sys.stdout, 'reconfigure'):
     sys.stdout.reconfigure(encoding='utf-8')
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--project-dir", type=str, default="", help="Directorio raíz del proyecto a renderizar")
 parser.add_argument("--output", type=str, default="", help="Ruta de salida del video MP4")
 args = parser.parse_args()
 
 # Directorios de trabajo
-CREATOR_APP_DIR = os.path.dirname(os.path.abspath(__file__))
-PUBLIC_DIR = os.path.join(CREATOR_APP_DIR, "public")
-ASSETS_DIR = os.path.join(PUBLIC_DIR, "assets")
-TIMELINE_PATH = os.path.join(ASSETS_DIR, "timeline.json")
+ENGINE_APP_DIR = os.path.dirname(os.path.abspath(__file__))
+APP_PUBLIC_ASSETS = os.path.join(ENGINE_APP_DIR, "public", "assets")
 
-OUTPUT_VIDEO_PATH = args.output if args.output else os.path.join(CREATOR_APP_DIR, "output_tutorial.mp4")
+if args.project_dir and os.path.exists(args.project_dir):
+    PROJECT_DIR = os.path.abspath(args.project_dir)
+else:
+    PROJECT_DIR = ENGINE_APP_DIR
+
+# Buscar archivo de proyecto (project.json o public/assets/timeline.json)
+if os.path.exists(os.path.join(PROJECT_DIR, "project.json")):
+    TIMELINE_PATH = os.path.join(PROJECT_DIR, "project.json")
+    PROJECT_ASSETS_DIR = os.path.join(PROJECT_DIR, "assets")
+elif os.path.exists(os.path.join(PROJECT_DIR, "public", "assets", "timeline.json")):
+    TIMELINE_PATH = os.path.join(PROJECT_DIR, "public", "assets", "timeline.json")
+    PROJECT_ASSETS_DIR = os.path.join(PROJECT_DIR, "public", "assets")
+elif os.path.exists(os.path.join(PROJECT_DIR, "timeline.json")):
+    TIMELINE_PATH = os.path.join(PROJECT_DIR, "timeline.json")
+    PROJECT_ASSETS_DIR = os.path.join(PROJECT_DIR, "assets")
+else:
+    TIMELINE_PATH = os.path.join(ENGINE_APP_DIR, "public", "assets", "timeline.json")
+    PROJECT_ASSETS_DIR = os.path.join(ENGINE_APP_DIR, "public", "assets")
+
+OUTPUT_VIDEO_PATH = args.output if args.output else os.path.join(PROJECT_DIR, "output_tutorial.mp4")
 
 DEFAULT_SETTINGS = {
     "resolution": {"width": 1920, "height": 1080},
@@ -46,7 +61,7 @@ DEFAULT_SETTINGS = {
     "zoomFactor": 1.20,
     "clickAnimationDurationMs": 1100,
     "headerStyle": {
-        "text": "Encuentra las actividades del libro en PuntajeNacional",
+        "text": "Tutorial Creator Studio",
         "fontSize": 20,
         "color": "#ffffff",
         "hasShadow": False,
@@ -60,7 +75,7 @@ DEFAULT_SETTINGS = {
 
 def load_project():
     if not os.path.exists(TIMELINE_PATH):
-        raise FileNotFoundError(f"No se encontró timeline.json en {TIMELINE_PATH}")
+        raise FileNotFoundError(f"No se encontró archivo de proyecto en {TIMELINE_PATH}")
     with open(TIMELINE_PATH, 'r', encoding='utf-8') as f:
         data = json.load(f)
     if isinstance(data, list):
@@ -81,6 +96,7 @@ CANVAS_H = float(settings.get("resolution", {}).get("height", 1080))
 fps = int(settings.get("fps", 30))
 zoom_factor = float(settings.get("zoomFactor", 1.20))
 header_style = settings.get("headerStyle", DEFAULT_SETTINGS["headerStyle"])
+bg_setting = str(settings.get("background", "assets/guideless_bg.webp"))
 
 # Dimensiones exactas del Studio DOM
 MOCKUP_W = 1540.0
@@ -176,22 +192,53 @@ def split_intro_lines(text, font, max_w=1200):
         lines.append(" ".join(curr))
     return lines
 
+def resolve_asset_path(rel_or_abs):
+    if not rel_or_abs:
+        return ""
+    if os.path.isabs(rel_or_abs) and os.path.exists(rel_or_abs):
+        return rel_or_abs
+    clean_rel = rel_or_abs.replace("\\", "/").lstrip("/")
+    
+    # 1. Buscar en assets del proyecto
+    cand1 = os.path.join(PROJECT_DIR, clean_rel)
+    if os.path.exists(cand1):
+        return cand1
+    cand2 = os.path.join(PROJECT_ASSETS_DIR, clean_rel)
+    if os.path.exists(cand2):
+        return cand2
+    cand3 = os.path.join(PROJECT_ASSETS_DIR, "screenshots", os.path.basename(clean_rel))
+    if os.path.exists(cand3):
+        return cand3
+    # 2. Buscar en assets de la app engine
+    cand4 = os.path.join(APP_PUBLIC_ASSETS, os.path.basename(clean_rel))
+    if os.path.exists(cand4):
+        return cand4
+    return ""
+
 _global_resources = {}
 
 def init_worker():
-    pjs_bold_path = os.path.join(ASSETS_DIR, "PlusJakartaSans-Bold.ttf")
-    inter_bold_path = os.path.join(ASSETS_DIR, "Inter-Bold.ttf")
-    inter_med_path = os.path.join(ASSETS_DIR, "Inter-Medium.ttf")
+    # Fuentes tipográficas (Buscar en app y proyecto)
+    def find_font(name):
+        f1 = os.path.join(PROJECT_ASSETS_DIR, name)
+        if os.path.exists(f1): return f1
+        f2 = os.path.join(APP_PUBLIC_ASSETS, name)
+        if os.path.exists(f2): return f2
+        return ""
+
+    pjs_bold_path = find_font("PlusJakartaSans-Bold.ttf")
+    inter_bold_path = find_font("Inter-Bold.ttf")
+    inter_med_path = find_font("Inter-Medium.ttf")
 
     hdr_fsize = int(header_style.get("fontSize", 20))
-    if os.path.exists(pjs_bold_path):
+    if pjs_bold_path:
         f_intro = ImageFont.truetype(pjs_bold_path, 64)
         f_header = ImageFont.truetype(pjs_bold_path, hdr_fsize)
     else:
         f_intro = ImageFont.truetype("arial.ttf", 64)
         f_header = ImageFont.truetype("arial.ttf", hdr_fsize)
 
-    if os.path.exists(inter_med_path):
+    if inter_med_path:
         f_sub = ImageFont.truetype(inter_med_path, 26)
         f_sub_bold = ImageFont.truetype(inter_bold_path, 26)
         f_addr = ImageFont.truetype(inter_med_path, 12)
@@ -200,11 +247,15 @@ def init_worker():
         f_sub_bold = ImageFont.truetype("arial.ttf", 26)
         f_addr = ImageFont.truetype("arial.ttf", 12)
 
-    bg_path = os.path.join(ASSETS_DIR, "guideless_bg.webp")
-    if os.path.exists(bg_path):
-        bg_grad = Image.open(bg_path).convert("RGB").resize((int(CANVAS_W), int(CANVAS_H)), Image.Resampling.LANCZOS)
+    # Cargar fondo personalizado o fallback
+    bg_resolved = resolve_asset_path(bg_setting)
+    if not bg_resolved:
+        bg_resolved = resolve_asset_path("assets/guideless_bg.webp")
+
+    if bg_resolved and os.path.exists(bg_resolved):
+        bg_grad = Image.open(bg_resolved).convert("RGB").resize((int(CANVAS_W), int(CANVAS_H)), Image.Resampling.LANCZOS)
     else:
-        bg_grad = Image.new("RGB", (int(CANVAS_W), int(CANVAS_H)), (100, 130, 190))
+        bg_grad = Image.new("RGB", (int(CANVAS_W), int(CANVAS_H)), (15, 23, 42))
 
     # Pre-calcular la sombra difusa del Mockup (box-shadow: 0 30px 80px rgba(0,0,0,0.85))
     mockup_w_int = int(MOCKUP_W)
@@ -221,16 +272,12 @@ def init_worker():
     sc_dict = {}
     for s in steps:
         raw_shot = str(s.get("screenshot") or "")
-        clean_name = os.path.basename(raw_shot.replace("\\", "/").strip())
-        if not clean_name:
-            clean_name = "screenshot_1.webp"
-
-        full_shot_path = os.path.join(ASSETS_DIR, clean_name)
-        if clean_name not in sc_dict:
-            if os.path.exists(full_shot_path):
-                sc_dict[clean_name] = Image.open(full_shot_path).convert("RGBA")
-            else:
-                sc_dict[clean_name] = Image.new("RGBA", (1920, 877), (240, 240, 240, 255))
+        shot_path = resolve_asset_path(raw_shot)
+        key = raw_shot
+        if shot_path and os.path.exists(shot_path):
+            sc_dict[key] = Image.open(shot_path).convert("RGBA")
+        else:
+            sc_dict[key] = Image.new("RGBA", (1920, 877), (240, 240, 240, 255))
 
     _global_resources["font_intro"] = f_intro
     _global_resources["font_header"] = f_header
@@ -261,9 +308,9 @@ def render_single_frame(f_idx):
     else:
         step_idx = len(steps) - 1
 
-    step = steps[step_idx]
+    step = steps[step_idx] if steps else {}
     prev_step = steps[step_idx - 1] if step_idx > 0 else None
-    t_start, t_end = step_timings[step_idx]
+    t_start, t_end = step_timings[step_idx] if step_timings else (0.0, 1.0)
     t_relative = t - t_start
     t_relative_ms = t_relative * 1000.0
 
@@ -272,11 +319,11 @@ def render_single_frame(f_idx):
     # =========================================================================
     # PASO 1 (INTRO CINEMATOGRÁFICA)
     # =========================================================================
-    if step_idx == 0:
+    if step.get("type") == "section" or step_idx == 0:
         fade_in = min(1.0, t_relative / 0.6)
         alpha = int(fade_in * 255)
 
-        title_text = step.get("transcript") or step.get("title") or "Encuentra las actividades del libro en PuntajeNacional"
+        title_text = step.get("transcript") or step.get("title") or "Tutorial Creator Studio"
         title_lines = split_intro_lines(title_text, font_intro, max_w=1200)
 
         line_height = 76.0
@@ -319,7 +366,6 @@ def render_single_frame(f_idx):
             dummy_calc = ImageDraw.Draw(canvas)
             text_w = dummy_calc.textlength(header_text, font=font_header)
             
-            # Obtener altura real de glifos para encajar el fondo de forma justa
             bbox = font_header.getbbox(header_text)
             text_glyph_h = (bbox[3] - bbox[1]) if bbox else 20
 
@@ -349,7 +395,7 @@ def render_single_frame(f_idx):
             tx = box_left + pad_x
             ty = box_top + pad_y - 1.0
 
-            # Sombra de Texto Reactiva: solo si hasShadow es True
+            # Sombra de Texto Reactiva
             has_shadow = bool(header_style.get("hasShadow", False))
             if has_shadow:
                 shd_col = parse_rgba(header_style.get("shadowColor", "rgba(0, 0, 0, 0.95)"))
@@ -369,10 +415,7 @@ def render_single_frame(f_idx):
 
     # Cargar captura actual
     raw_shot = str(step.get("screenshot") or "")
-    clean_name = os.path.basename(raw_shot.replace("\\", "/").strip())
-    if not clean_name:
-        clean_name = "screenshot_1.webp"
-    raw_sc = screenshots.get(clean_name, Image.new("RGBA", (1920, 877), (255, 255, 255, 255)))
+    raw_sc = screenshots.get(raw_shot, Image.new("RGBA", (1920, 877), (255, 255, 255, 255)))
 
     # 3. Transformación CSS de la Captura Actual
     zoom_trigger_sec = 0.70
@@ -384,10 +427,10 @@ def render_single_frame(f_idx):
         ty_pct = 0.0
     else:
         vp_scale = zoom_factor
-        bx = step["boundingBox"]["x"]
-        by = step["boundingBox"]["y"]
-        bw = step["boundingBox"]["width"]
-        bh = step["boundingBox"]["height"]
+        bx = step.get("boundingBox", {}).get("x", 0.5)
+        by = step.get("boundingBox", {}).get("y", 0.5)
+        bw = step.get("boundingBox", {}).get("width", 0.1)
+        bh = step.get("boundingBox", {}).get("height", 0.05)
 
         cx = bx + bw / 2.0
         cy = by + bh / 2.0
@@ -421,19 +464,13 @@ def render_single_frame(f_idx):
     # =========================================================================
     crossfade_dur = 0.40
     if step_idx > 1 and prev_step and prev_step.get("type") != "section" and t_relative < crossfade_dur:
-        # Disolver captura del paso previo sobre la nueva
         prev_raw_shot = str(prev_step.get("screenshot") or "")
-        prev_clean_name = os.path.basename(prev_raw_shot.replace("\\", "/").strip())
-        if not prev_clean_name:
-            prev_clean_name = "screenshot_1.webp"
-
-        prev_sc = screenshots.get(prev_clean_name)
+        prev_sc = screenshots.get(prev_raw_shot)
         if prev_sc:
             prev_resized = prev_sc.resize((mockup_w_int, page_h_int), Image.Resampling.LANCZOS)
             prev_fade_surface = Image.new("RGBA", (mockup_w_int, page_h_int), (0, 0, 0, 0))
             prev_fade_surface.paste(prev_resized, (0, 0))
             
-            # Opacidad decreciente suave (1.0 -> 0.0)
             fade_progress = t_relative / crossfade_dur
             alpha_prev = int((1.0 - ease_in_out_cubic(fade_progress)) * 255)
             prev_fade_surface.putalpha(Image.new("L", (mockup_w_int, page_h_int), alpha_prev))
@@ -541,7 +578,6 @@ def render_single_frame(f_idx):
         canvas.paste(mockup_shadow, (0, 0), mockup_shadow)
         canvas.paste(mockup_img, (int(MOCKUP_PX), int(MOCKUP_PY)), mockup_mask)
     else:
-        # Escalado suave durante el stage-enter
         nw = int(mockup_w_int * mockup_scale)
         nh = int(mockup_h_int * mockup_scale)
         mockup_scaled = mockup_img.resize((nw, nh), Image.Resampling.LANCZOS)
@@ -560,7 +596,7 @@ def render_single_frame(f_idx):
         width=1
     )
 
-    # 7. Subtítulos Inferiores (#subtitle-box: bottom 54px, padding 14px 36px, Inter Medium 26px)
+    # 7. Subtítulos Inferiores (#subtitle-box)
     transcript = step.get("transcript", "")
     marks = step.get("marks", [])
     if transcript:
@@ -609,7 +645,6 @@ def render_single_frame(f_idx):
                 font_to_use = font_sub_bold if is_word_active else font_sub
                 
                 if is_word_active:
-                    # Glow blanco: text-shadow: 0 0 12px rgba(255,255,255,0.6)
                     glow_layer = Image.new("RGBA", (int(CANVAS_W), int(CANVAS_H)), (0, 0, 0, 0))
                     draw_glow = ImageDraw.Draw(glow_layer)
                     draw_glow.text((x_curr, y_text), mark["text"], font=font_to_use, fill=(255, 255, 255, 180))
@@ -630,12 +665,14 @@ def render_single_frame(f_idx):
 
 def main():
     print("=" * 70)
-    print("  CREATOR STUDIO PIXEL-PERFECT VIDEO RENDERER (V23 TRANSITIONS & HEADER)")
+    print("  CREATOR STUDIO PIXEL-PERFECT MULTI-PROJECT VIDEO RENDERER (V24)")
     print("=" * 70)
-    print(f"[TIMELINE] Cargados {len(steps)} pasos.")
+    print(f"[PROYECTO] Directorio: {PROJECT_DIR}")
+    print(f"[TIMELINE] Archivo: {TIMELINE_PATH} ({len(steps)} pasos cargados)")
     print(f"[INFO] Duración: {total_duration_sec:.2f}s | FPS: {fps} | Total fotogramas: {total_frames}")
-    print(f"[HEADER] Sombra activa: {header_style.get('hasShadow', False)} | Fondo activo: {header_style.get('hasBackground', True)} | FontSize: {header_style.get('fontSize', 20)}px")
-    print(f"[SALIDA] Destino: {OUTPUT_VIDEO_PATH}")
+    print(f"[FONDO] Setting: {bg_setting}")
+    print(f"[HEADER] Sombra: {header_style.get('hasShadow', False)} | Fondo: {header_style.get('hasBackground', True)}")
+    print(f"[SALIDA] Video Destino: {OUTPUT_VIDEO_PATH}")
 
     num_workers = max(1, multiprocessing.cpu_count() - 1)
     print(f"[TURBO] Acelerando con {num_workers} núcleos de CPU en paralelo.")

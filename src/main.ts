@@ -1,24 +1,25 @@
 import './style.css';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
-import { save } from '@tauri-apps/plugin-dialog';
+import { open, save } from '@tauri-apps/plugin-dialog';
 import type { ProjectData, StepItem } from './types';
 
 class CreatorStudio {
+  private projectDir: string = '';
   private project: ProjectData = {
     title: 'Mi Tutorial Interactivo',
     settings: {
       resolution: { width: 1920, height: 1080 },
       fps: 30,
       theme: 'mac_dark',
-      background: '/assets/guideless_bg.webp',
+      background: 'assets/guideless_bg.webp',
       zoomFactor: 1.20,
       clickAnimationDurationMs: 1100,
       headerStyle: {
-        text: 'Encuentra las actividades del libro en PuntajeNacional',
+        text: 'Tutorial Creator Studio',
         fontSize: 22,
         color: '#ffffff',
-        hasShadow: true,
+        hasShadow: false,
         shadowColor: 'rgba(0, 0, 0, 0.95)',
         hasBackground: true,
         backgroundColor: 'rgba(15, 23, 42, 0.75)',
@@ -62,25 +63,29 @@ class CreatorStudio {
   }
 
   private async loadInitialProject() {
-    let loadedFromLocal = false;
+    let loaded = false;
     try {
       const localSaved = localStorage.getItem('creator_studio_project');
+      const localDir = localStorage.getItem('creator_studio_project_dir');
+      if (localDir) this.projectDir = localDir;
+
       if (localSaved) {
         const raw = JSON.parse(localSaved);
         const stepsData = Array.isArray(raw) ? raw : (raw.steps || []);
-        if (raw.settings?.headerStyle) {
-          this.project.settings.headerStyle = raw.settings.headerStyle;
+        if (raw.settings) {
+          this.project.settings = { ...this.project.settings, ...raw.settings };
         }
+        if (raw.title) this.project.title = raw.title;
         if (stepsData.length > 0) {
           this.project.steps = stepsData;
-          loadedFromLocal = true;
+          loaded = true;
         }
       }
     } catch (e) {
-      console.warn('LocalStorage parse error:', e);
+      console.warn('LocalStorage error:', e);
     }
 
-    if (!loadedFromLocal) {
+    if (!loaded) {
       try {
         const cacheBuster = `?t=${Date.now()}`;
         let res = await fetch(`/assets/timeline.json${cacheBuster}`, { cache: 'no-store' });
@@ -90,43 +95,86 @@ class CreatorStudio {
         if (res.ok) {
           const raw = await res.json();
           const stepsData = Array.isArray(raw) ? raw : (raw.steps || []);
-          if (raw.settings?.headerStyle) {
-            this.project.settings.headerStyle = raw.settings.headerStyle;
+          if (raw.settings) {
+            this.project.settings = { ...this.project.settings, ...raw.settings };
           }
+          if (raw.title) this.project.title = raw.title;
 
-          const loadedSteps = stepsData.map((item: any, i: number) => {
-            let shot = item.screenshot;
-            if (shot) {
-              shot = shot.replace(/^\/+/, '').replace(/^assets\//, '');
-              shot = `assets/${shot}`;
-            } else {
-              shot = 'assets/screenshot_1.webp';
-            }
-            return {
-              id: item.id || `step-${i + 1}`,
-              type: item.type || 'click',
-              title: item.title || `Paso ${i + 1}`,
-              transcript: item.transcript || '',
-              audio: item.audio || null,
-              screenshot: shot,
-              duration: item.duration || 4500,
-              pageTitle: item.pageTitle || 'PuntajeNacional.cl',
-              enableZoom: item.type !== 'section',
-              boundingBox: item.boundingBox || { x: 0.5, y: 0.5, width: 0.1, height: 0.05 },
-              clickCoords: item.clickCoords || { x: 0.5, y: 0.5 },
-              marks: item.marks || [],
-            };
-          });
-          this.project.steps = loadedSteps;
+          this.project.steps = stepsData.map((item: any, i: number) => ({
+            id: item.id || `step-${i + 1}`,
+            type: item.type || (i === 0 ? 'section' : 'click'),
+            title: item.title || `Paso ${i + 1}`,
+            transcript: item.transcript || '',
+            audio: item.audio || null,
+            screenshot: item.screenshot || 'assets/screenshot_1.webp',
+            duration: item.duration || (i === 0 ? 3000 : 4500),
+            pageTitle: item.pageTitle || 'https://plataforma.com',
+            enableZoom: item.type !== 'section',
+            boundingBox: item.boundingBox || { x: 0.5, y: 0.5, width: 0.16, height: 0.08 },
+            clickCoords: item.clickCoords || { x: 0.5, y: 0.5 },
+            marks: item.marks || [],
+          }));
         }
       } catch (e) {
-        console.warn('Could not load timeline.json, using default template', e);
+        console.warn('Fallback template load notice:', e);
       }
     }
 
     if (this.project.steps.length === 0) {
-      this.addNewStep();
+      this.createNewBlankProjectState('Nuevo Tutorial');
     }
+  }
+
+  private createNewBlankProjectState(title: string) {
+    this.project = {
+      title,
+      settings: {
+        resolution: { width: 1920, height: 1080 },
+        fps: 30,
+        theme: 'mac_dark',
+        background: 'assets/guideless_bg.webp',
+        zoomFactor: 1.20,
+        clickAnimationDurationMs: 1100,
+        headerStyle: {
+          text: title,
+          fontSize: 22,
+          color: '#ffffff',
+          hasShadow: false,
+          shadowColor: 'rgba(0, 0, 0, 0.95)',
+          hasBackground: true,
+          backgroundColor: 'rgba(15, 23, 42, 0.75)',
+          backgroundPadding: 10,
+          borderRadius: 8,
+        },
+      },
+      steps: [
+        {
+          id: 'step-intro',
+          type: 'section',
+          title: title,
+          transcript: title,
+          duration: 3000,
+          marks: [],
+        }
+      ]
+    };
+    this.currentStepIndex = 0;
+    this.currentTimeMs = 0;
+  }
+
+  private showToast(message: string, durationMs: number = 3000) {
+    let toast = document.getElementById('app-toast');
+    if (!toast) {
+      toast = document.createElement('div');
+      toast.id = 'app-toast';
+      toast.className = 'toast-notification';
+      document.body.appendChild(toast);
+    }
+    toast.textContent = message;
+    toast.classList.add('show');
+    setTimeout(() => {
+      toast?.classList.remove('show');
+    }, durationMs);
   }
 
   private renderLayout() {
@@ -140,22 +188,38 @@ class CreatorStudio {
       <div class="app-container">
         <!-- Top Bar -->
         <header class="top-bar">
-          <div style="display: flex; align-items: center; gap: 14px;">
+          <div style="display: flex; align-items: center; gap: 12px;">
             <div style="display: flex; align-items: center; gap: 8px;">
               <span style="font-size: 18px;">✨</span>
               <span style="font-family: 'Plus Jakarta Sans'; font-weight: 700; font-size: 15px; letter-spacing: -0.3px;">Creator Studio</span>
-              <span style="font-size: 10px; background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid rgba(96, 165, 250, 0.3);">BETA</span>
+              <span style="font-size: 10px; background: rgba(59, 130, 246, 0.2); color: #60a5fa; padding: 2px 6px; border-radius: 4px; font-weight: 600; border: 1px solid rgba(96, 165, 250, 0.3);">PRO</span>
             </div>
+            
             <div style="height: 16px; width: 1px; background: var(--bg-panel-border);"></div>
-            <input id="project-title-input" value="${this.project.title}" style="background: transparent; border: 1px solid transparent; color: var(--text-main); font-size: 13px; font-weight: 500; padding: 3px 8px; border-radius: 4px; outline: none;" placeholder="Nombre del tutorial..." />
+
+            <!-- Botones Multi-Proyecto -->
+            <button id="btn-new-project" class="btn-glass" title="Crear un nuevo proyecto en una carpeta">
+              <span>➕</span> Nuevo
+            </button>
+            <button id="btn-open-project" class="btn-glass" title="Abrir proyecto existente">
+              <span>📂</span> Abrir
+            </button>
+
+            <div style="height: 16px; width: 1px; background: var(--bg-panel-border);"></div>
+
+            <input id="project-title-input" value="${this.project.title}" style="background: rgba(0,0,0,0.2); border: 1px solid rgba(255,255,255,0.08); color: var(--text-main); font-size: 13px; font-weight: 500; padding: 4px 10px; border-radius: 6px; outline: none; width: 260px;" placeholder="Título del tutorial..." />
+            
+            <span id="project-folder-label" style="font-size: 11px; color: var(--text-muted); font-family: monospace; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+              ${this.projectDir ? `📁 ${this.projectDir.split(/[\/\\]/).pop()}` : '📁 Proyecto en memoria'}
+            </span>
           </div>
 
           <div style="display: flex; align-items: center; gap: 10px;">
-            <button id="btn-toggle-fullscreen" class="btn-glass" title="Pantalla Completa (F11)">
+            <button id="btn-toggle-fullscreen" class="btn-glass" title="Pantalla Completa">
               <span>⛶</span>
             </button>
-            <button id="btn-add-step" class="btn-glass">
-              <span>➕</span> Añadir Paso
+            <button id="btn-add-screenshot-step" class="btn-glass" style="border-color: rgba(59, 130, 246, 0.4); background: rgba(59, 130, 246, 0.1);">
+              <span>🖼️</span> Añadir Paso con Captura
             </button>
             <button id="btn-save-project" class="btn-glass">
               <span>💾</span> Guardar
@@ -166,50 +230,42 @@ class CreatorStudio {
           </div>
         </header>
 
-        <!-- Main Workspace (Viewport & Inspector) -->
-        <main class="main-content">
-          <section class="viewport-area" id="viewport-container">
-            <button id="btn-exit-canvas-fullscreen" class="exit-fullscreen-floating-btn" title="Salir de Pantalla Completa (Esc)">
-              <span>✕</span> Salir de Pantalla Completa
-            </button>
-
-            <!-- Floating Player Controls for Fullscreen Mode -->
-            <div class="fullscreen-controls-bar">
-              <button id="btn-fs-prev" class="btn-glass" style="padding: 6px 12px;">⏮</button>
-              <button id="btn-fs-play" class="btn-primary" style="padding: 6px 16px;">▶ Play</button>
-              <button id="btn-fs-next" class="btn-glass" style="padding: 6px 12px;">⏭</button>
-              <span id="fs-time-display" style="font-family: monospace; font-size: 13px; color: #fff; margin-left: 6px;">00:00.0 / 00:00.0</span>
-            </div>
-
-            <div class="stage-wrapper" id="stage-wrapper">
-              <div id="virtual-stage" style="background-image: url('${this.project.settings.background}');">
+        <!-- Main Workspace -->
+        <div class="main-content">
+          <!-- Central 1080p Stage -->
+          <div class="viewport-area">
+            <div class="stage-wrapper">
+              <div id="virtual-stage">
                 <div id="stage-content" style="width: 100%; height: 100%; position: relative;"></div>
               </div>
             </div>
-          </section>
+          </div>
 
-          <!-- Right Inspector Panel -->
-          <aside class="inspector-panel" id="inspector-panel"></aside>
-        </main>
+          <!-- Right Property Inspector -->
+          <aside class="inspector-panel" id="inspector-panel">
+            <!-- Inspector content populated dynamically -->
+          </aside>
+        </div>
 
-        <!-- Bottom Timeline -->
-        <footer class="timeline-bar">
-          <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px;">
-            <div style="display: flex; align-items: center; gap: 12px;">
-              <button id="btn-prev-step" class="btn-glass" style="padding: 4px 8px;">⏮</button>
-              <button id="btn-play-pause" class="btn-primary" style="padding: 4px 12px;">▶ Play</button>
-              <button id="btn-next-step" class="btn-glass" style="padding: 4px 8px;">⏭</button>
-              <span id="time-display" style="font-family: monospace; font-size: 12px; color: var(--text-muted);">00:00.0 / 00:00.0</span>
+        <!-- Bottom Timeline Panel -->
+        <footer class="timeline-panel">
+          <div class="timeline-toolbar">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button id="btn-play-pause" class="btn-glass" style="min-width: 80px;">▶ Play</button>
+              <button id="btn-prev-step" class="btn-glass" title="Paso Anterior">⏮</button>
+              <button id="btn-next-step" class="btn-glass" title="Siguiente Paso">⏭</button>
+              <div style="height: 16px; width: 1px; background: var(--bg-panel-border); margin: 0 4px;"></div>
+              <span id="timeline-time-display" style="font-size: 12px; font-family: monospace; color: var(--text-muted);">00:00.00 / 00:00.00</span>
             </div>
 
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <span style="font-size: 11px; color: var(--text-muted);">Escala Canvas:</span>
-              <span id="scale-indicator" style="font-size: 11px; font-weight: 600; color: #60a5fa;">100%</span>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span style="font-size: 11px; color: var(--text-muted);">Haz clic en el mockup para posicionar el cursor</span>
             </div>
           </div>
 
-          <!-- Horizontal Steps Track -->
-          <div id="steps-track-container" style="display: flex; gap: 8px; overflow-x: auto; flex: 1; padding-bottom: 4px; align-items: center;"></div>
+          <div class="timeline-tracks-area" id="steps-track-container">
+            <!-- Step blocks dynamically rendered -->
+          </div>
         </footer>
       </div>
     `;
@@ -219,142 +275,165 @@ class CreatorStudio {
 
   private setupResizeObserver() {
     const updateScale = () => {
-      const container = document.getElementById('viewport-container');
-      if (!container || !this.stageEl) return;
-
-      const padding = 48;
-      const availW = container.clientWidth - padding;
-      const availH = container.clientHeight - padding;
-
+      const wrapper = document.querySelector('.stage-wrapper');
+      if (!wrapper || !this.stageEl) return;
+      const rect = wrapper.getBoundingClientRect();
+      const padding = 32;
+      const availW = rect.width - padding * 2;
+      const availH = rect.height - padding * 2;
       const scale = Math.min(availW / 1920, availH / 1080, 1.0);
       this.stageEl.style.transform = `scale(${scale})`;
-
-      const indicator = document.getElementById('scale-indicator');
-      if (indicator) {
-        indicator.textContent = `${Math.round(scale * 100)}%`;
-      }
     };
 
     window.addEventListener('resize', updateScale);
     setTimeout(updateScale, 50);
   }
 
-  private bindEvents() {
-    const titleInput = document.getElementById('project-title-input') as HTMLInputElement;
-    titleInput?.addEventListener('input', (e) => {
-      this.project.title = (e.target as HTMLInputElement).value;
-    });
+  private async resolveAssetUrl(relOrAbs: string): Promise<string> {
+    if (!relOrAbs) return '/assets/guideless_bg.webp';
+    if (relOrAbs.startsWith('data:') || relOrAbs.startsWith('http')) return relOrAbs;
 
-    const playBtn = document.getElementById('btn-play-pause');
-    playBtn?.addEventListener('click', () => this.togglePlay());
-
-    document.getElementById('btn-add-step')?.addEventListener('click', () => this.addNewStep());
-
-    const toggleFullscreen = async () => {
+    // Si tenemos un directorio de proyecto activo en Tauri
+    if (this.projectDir) {
       try {
-        const isCurrentlyFull = document.body.classList.toggle('canvas-fullscreen');
-        
-        // Sincronizar también con la ventana nativa o navegador
-        if ((window as any).__TAURI_INTERNALS__) {
-          const { getCurrentWindow } = await import('@tauri-apps/api/window');
-          const win = getCurrentWindow();
-          await win.setFullscreen(isCurrentlyFull);
-        } else {
-          if (isCurrentlyFull && !document.fullscreenElement) {
-            document.documentElement.requestFullscreen().catch(() => {});
-          } else if (!isCurrentlyFull && document.fullscreenElement) {
-            document.exitFullscreen().catch(() => {});
-          }
+        let fullPath = relOrAbs;
+        if (!relOrAbs.includes(':') && !relOrAbs.startsWith('/') && !relOrAbs.startsWith('\\')) {
+          fullPath = `${this.projectDir}/${relOrAbs.replace(/^\/+/, '')}`;
         }
-
-        // Forzar actualización inmediata del cálculo de escala de video
-        setTimeout(() => {
-          const container = document.getElementById('viewport-container');
-          if (!container || !this.stageEl) return;
-          const availW = isCurrentlyFull ? window.innerWidth : (container.clientWidth - 48);
-          const availH = isCurrentlyFull ? window.innerHeight : (container.clientHeight - 48);
-          const scale = Math.min(availW / 1920, availH / 1080);
-          this.stageEl.style.transform = `scale(${scale})`;
-          const indicator = document.getElementById('scale-indicator');
-          if (indicator) indicator.textContent = `${Math.round(scale * 100)}%`;
-        }, 100);
-      } catch (err) {
-        console.warn('Fullscreen toggle failed:', err);
+        const b64 = await invoke<string>('read_file_as_base64', { filePath: fullPath });
+        if (b64) return b64;
+      } catch (e) {
+        // Fallback local
       }
-    };
+    }
 
-    document.getElementById('btn-toggle-fullscreen')?.addEventListener('click', toggleFullscreen);
-    document.getElementById('btn-exit-canvas-fullscreen')?.addEventListener('click', toggleFullscreen);
+    const clean = relOrAbs.replace(/^\/+/, '').replace(/^assets\//, '');
+    return `/assets/${clean}`;
+  }
 
-    window.addEventListener('keydown', (e) => {
-      if (e.key === 'F11' || (e.key === 'Escape' && document.body.classList.contains('canvas-fullscreen'))) {
-        e.preventDefault();
-        toggleFullscreen();
+  private bindEvents() {
+    // Título del proyecto
+    document.getElementById('project-title-input')?.addEventListener('input', (e) => {
+      const val = (e.target as HTMLInputElement).value;
+      this.project.title = val;
+      if (this.project.settings.headerStyle) {
+        this.project.settings.headerStyle.text = val;
+      }
+      if (this.project.steps[0] && this.project.steps[0].type === 'section') {
+        this.project.steps[0].title = val;
+        this.project.steps[0].transcript = val;
+      }
+      this.updateStageContent();
+      this.updateInspector();
+    });
+
+    // Crear Nuevo Proyecto
+    document.getElementById('btn-new-project')?.addEventListener('click', async () => {
+      try {
+        const chosenFolder = await open({
+          directory: true,
+          multiple: false,
+          title: 'Seleccionar carpeta donde crear el nuevo proyecto'
+        });
+
+        if (!chosenFolder) return;
+        const folderStr = Array.isArray(chosenFolder) ? chosenFolder[0] : chosenFolder;
+        if (!folderStr) return;
+
+        const projectName = prompt('Nombre del nuevo proyecto:', 'Mi Nuevo Tutorial') || 'Mi Nuevo Tutorial';
+        
+        const createdFile = await invoke<string>('create_blank_project', {
+          projectDir: folderStr,
+          projectTitle: projectName
+        });
+
+        this.projectDir = folderStr;
+        localStorage.setItem('creator_studio_project_dir', folderStr);
+
+        this.createNewBlankProjectState(projectName);
+        this.saveProjectData();
+        this.renderLayout();
+        this.bindEvents();
+        this.updateStageContent();
+        this.updateInspector();
+
+        this.showToast(`✨ Proyecto creado en: ${createdFile}`);
+      } catch (e) {
+        console.error('Error creando proyecto:', e);
+        this.showToast(`❌ Error creando proyecto: ${e}`);
       }
     });
 
+    // Abrir Proyecto Existente
+    document.getElementById('btn-open-project')?.addEventListener('click', async () => {
+      try {
+        const chosen = await open({
+          directory: false,
+          multiple: false,
+          title: 'Abrir archivo project.json o timeline.json',
+          filters: [{ name: 'JSON Project', extensions: ['json'] }]
+        });
+
+        if (!chosen) return;
+        const filePath = Array.isArray(chosen) ? chosen[0] : chosen;
+        if (!filePath) return;
+
+        const content = await invoke<string>('load_project_file', { filePath });
+        const raw = JSON.parse(content);
+
+        const parentDir = filePath.replace(/[\/\\][^\/\\]+$/, '');
+        this.projectDir = parentDir;
+        localStorage.setItem('creator_studio_project_dir', parentDir);
+
+        this.project.title = raw.title || 'Tutorial Cargado';
+        if (raw.settings) this.project.settings = { ...this.project.settings, ...raw.settings };
+        this.project.steps = raw.steps || [];
+
+        this.currentStepIndex = 0;
+        this.currentTimeMs = 0;
+        this.saveProjectData();
+        this.renderLayout();
+        this.bindEvents();
+        this.updateStageContent();
+        this.updateInspector();
+
+        this.showToast(`📂 Proyecto cargado exitosamente`);
+      } catch (e) {
+        console.error('Error abriendo proyecto:', e);
+        this.showToast(`❌ Error abriendo proyecto: ${e}`);
+      }
+    });
+
+    // Añadir Paso con Captura (JPG/PNG)
+    document.getElementById('btn-add-screenshot-step')?.addEventListener('click', async () => {
+      await this.handleImportScreenshotStep();
+    });
+
+    // Pantalla completa
+    document.getElementById('btn-toggle-fullscreen')?.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(() => {});
+      } else {
+        document.exitFullscreen().catch(() => {});
+      }
+    });
+
+    // Playback
+    document.getElementById('btn-play-pause')?.addEventListener('click', () => this.togglePlay());
     document.getElementById('btn-prev-step')?.addEventListener('click', () => {
       if (this.currentStepIndex > 0) this.selectStep(this.currentStepIndex - 1);
     });
-
     document.getElementById('btn-next-step')?.addEventListener('click', () => {
       if (this.currentStepIndex < this.project.steps.length - 1) this.selectStep(this.currentStepIndex + 1);
     });
 
-    document.getElementById('btn-fs-play')?.addEventListener('click', () => this.togglePlay());
-    document.getElementById('btn-fs-prev')?.addEventListener('click', () => {
-      if (this.currentStepIndex > 0) this.selectStep(this.currentStepIndex - 1);
-    });
-    document.getElementById('btn-fs-next')?.addEventListener('click', () => {
-      if (this.currentStepIndex < this.project.steps.length - 1) this.selectStep(this.currentStepIndex + 1);
-    });
-
-    const showToast = (message: string, durationMs: number = 3000) => {
-      let toast = document.getElementById('app-toast');
-      if (!toast) {
-        toast = document.createElement('div');
-        toast.id = 'app-toast';
-        toast.className = 'toast-notification';
-        document.body.appendChild(toast);
-      }
-      toast.textContent = message;
-      toast.classList.add('show');
-      setTimeout(() => {
-        toast?.classList.remove('show');
-      }, durationMs);
-    };
-
+    // Guardar Proyecto
     document.getElementById('btn-save-project')?.addEventListener('click', (e) => {
       e.preventDefault();
-      e.stopPropagation();
-
-      const fullProjectData = {
-        settings: this.project.settings,
-        steps: this.project.steps
-      };
-      const payload = JSON.stringify(fullProjectData, null, 2);
-      
-      // 1. Guardado en memoria local inmediato
-      try {
-        localStorage.setItem('creator_studio_project', payload);
-      } catch (err) {
-        console.warn('LocalStorage error:', err);
-      }
-
-      // 2. Feedback visual inmediato
-      showToast('✅ Proyecto guardado en memoria y disco');
-
-      // 3. Escritura a disco delegada a Rust de forma asíncrona segura
-      setTimeout(async () => {
-        try {
-          await invoke('save_project', { projectJson: payload });
-        } catch (err) {
-          console.warn('Tauri invoke save_project background notice:', err);
-        }
-      }, 50);
+      this.saveProjectData(true);
     });
 
-    // Escuchar progreso en tiempo real emitido por el motor nativo
+    // Renderizar MP4
     try {
       listen<string>('render-progress', (event) => {
         const payload = event.payload;
@@ -362,66 +441,52 @@ class CreatorStudio {
         if (btn && btn.disabled) {
           const match = payload.match(/(\d+%)/);
           if (match) {
-            btn.innerHTML = `<span class="spin-icon">⚡</span> Renderizando (${match[1]})...`;
+            btn.innerHTML = `<span class="spin-icon">⚡</span> Exportando (${match[1]})...`;
           }
         }
       });
-    } catch (e) {
-      console.warn('Listener de render-progress no disponible fuera de Tauri', e);
-    }
+    } catch (e) {}
 
     document.getElementById('btn-render-video')?.addEventListener('click', async () => {
       const btn = document.getElementById('btn-render-video') as HTMLButtonElement;
-
       try {
-        // 1. Abrir diálogo nativo para elegir dónde guardar el video
+        let defaultOutput = 'tutorial_render.mp4';
+        if (this.projectDir) {
+          defaultOutput = `${this.projectDir}/output_tutorial.mp4`;
+        }
+
         let chosenPath: string | null = null;
         try {
           chosenPath = await save({
             title: 'Guardar video renderizado',
-            defaultPath: 'tutorial_render.mp4',
-            filters: [{
-              name: 'Video MP4',
-              extensions: ['mp4']
-            }]
+            defaultPath: defaultOutput,
+            filters: [{ name: 'Video MP4', extensions: ['mp4'] }]
           });
         } catch (dialogErr) {
-          console.warn('Diálogo no disponible o cancelado, usando ruta por defecto', dialogErr);
+          console.warn('Diálogo no disponible o cancelado', dialogErr);
         }
 
-        // Si el usuario canceló el diálogo
         if (chosenPath === null) {
-          showToast('ℹ️ Renderizado cancelado por el usuario');
+          this.showToast('ℹ️ Renderizado cancelado por el usuario');
           return;
         }
 
         if (btn) {
           btn.disabled = true;
-          btn.innerHTML = '<span class="spin-icon">⚡</span> Guardando ajustes y preparando render...';
+          btn.innerHTML = '<span class="spin-icon">⚡</span> Preparando motor turbo UV...';
         }
 
-        // Sincronizar automáticamente en disco antes de iniciar render
-        const fullProjectData = {
-          settings: this.project.settings,
-          steps: this.project.steps
-        };
-        const payload = JSON.stringify(fullProjectData, null, 2);
-        try {
-          localStorage.setItem('creator_studio_project', payload);
-          await invoke('save_project', { projectJson: payload });
-        } catch (e) {
-          console.warn('Auto-save prior to render warning:', e);
-        }
-
-        showToast('🚀 Renderizando video Full HD 1080p con máxima calidad y velocidad UV...', 5000);
+        await this.saveProjectData(false);
+        this.showToast('🚀 Renderizando video Full HD 1080p con máxima calidad y velocidad UV...', 5000);
 
         const result = await invoke<string>('start_render_job', {
+          projectDir: this.projectDir || undefined,
           outputPath: chosenPath
         });
-        showToast(`🎉 ${result}`, 8000);
+        this.showToast(`🎉 ${result}`, 8000);
       } catch (err) {
-        console.error('Error al renderizar video:', err);
-        showToast(`❌ Error en renderizado: ${err}`, 8000);
+        console.error('Error al renderizar:', err);
+        this.showToast(`❌ Error en renderizado: ${err}`, 8000);
       } finally {
         if (btn) {
           btn.disabled = false;
@@ -429,6 +494,77 @@ class CreatorStudio {
         }
       }
     });
+  }
+
+  private async handleImportScreenshotStep() {
+    try {
+      const selected = await open({
+        multiple: false,
+        directory: false,
+        title: 'Seleccionar captura de pantalla del paso',
+        filters: [{ name: 'Imágenes', extensions: ['png', 'jpg', 'jpeg', 'webp'] }]
+      });
+
+      if (!selected) return;
+      const imgPath = Array.isArray(selected) ? selected[0] : selected;
+      if (!imgPath) return;
+
+      let relativePath = imgPath;
+      if (this.projectDir) {
+        relativePath = await invoke<string>('import_step_screenshot', {
+          projectDir: this.projectDir,
+          sourceImagePath: imgPath
+        });
+      }
+
+      const newIdx = this.project.steps.length;
+      const newStep: StepItem = {
+        id: `step-${Date.now()}`,
+        type: 'click',
+        title: `Paso ${newIdx + 1}`,
+        transcript: 'Haz clic en el elemento destacado para continuar.',
+        screenshot: relativePath,
+        duration: 4500,
+        pageTitle: 'https://plataforma.com',
+        enableZoom: true,
+        boundingBox: { x: 0.42, y: 0.46, width: 0.16, height: 0.08 },
+        clickCoords: { x: 0.50, y: 0.50 },
+        marks: []
+      };
+
+      this.autoGenerateMarks(newStep);
+      this.project.steps.push(newStep);
+      this.selectStep(newIdx);
+      this.saveProjectData(false);
+      this.showToast(`🖼️ Paso ${newIdx + 1} añadido con captura`);
+    } catch (e) {
+      console.error('Error importando captura:', e);
+      this.showToast(`❌ Error importando captura: ${e}`);
+    }
+  }
+
+  private async saveProjectData(notify: boolean = false) {
+    const fullProjectData = {
+      title: this.project.title,
+      settings: this.project.settings,
+      steps: this.project.steps
+    };
+    const payload = JSON.stringify(fullProjectData, null, 2);
+
+    try {
+      localStorage.setItem('creator_studio_project', payload);
+    } catch (e) {}
+
+    try {
+      let targetFile: string | undefined = undefined;
+      if (this.projectDir) {
+        targetFile = `${this.projectDir}/project.json`;
+      }
+      await invoke('save_project', { projectJson: payload, filePath: targetFile });
+      if (notify) this.showToast('✅ Proyecto guardado en disco');
+    } catch (err) {
+      console.warn('Save notice:', err);
+    }
   }
 
   private selectStep(index: number) {
@@ -443,114 +579,71 @@ class CreatorStudio {
   private togglePlay() {
     this.isPlaying = !this.isPlaying;
     const playBtn = document.getElementById('btn-play-pause');
-    const fsPlayBtn = document.getElementById('btn-fs-play');
-    const label = this.isPlaying ? '⏸ Pausa' : '▶ Play';
-    if (playBtn) playBtn.innerHTML = label;
-    if (fsPlayBtn) fsPlayBtn.innerHTML = label;
+    if (playBtn) playBtn.innerHTML = this.isPlaying ? '⏸ Pausa' : '▶ Play';
 
     if (this.isPlaying) {
-      // Si estamos en el final del último paso, reiniciar al paso 1 al pulsar play
-      const currentStep = this.project.steps[this.currentStepIndex];
-      if (this.currentStepIndex === this.project.steps.length - 1 && currentStep && this.currentTimeMs >= currentStep.duration) {
-        this.selectStep(0);
-      }
       this.lastTimestamp = performance.now();
-      this.tick();
+      this.playLoop();
     } else if (this.animFrameId) {
       cancelAnimationFrame(this.animFrameId);
-      this.animFrameId = null;
     }
   }
 
-  private tick = () => {
-    if (!this.isPlaying) return;
+  private playLoop() {
+    const loop = (now: number) => {
+      if (!this.isPlaying) return;
+      const dt = now - this.lastTimestamp;
+      this.lastTimestamp = now;
+      this.currentTimeMs += dt;
 
-    const now = performance.now();
-    const delta = now - this.lastTimestamp;
-    this.lastTimestamp = now;
-
-    this.currentTimeMs += delta;
-    const step = this.project.steps[this.currentStepIndex];
-
-    if (step && this.currentTimeMs >= step.duration) {
-      if (this.currentStepIndex < this.project.steps.length - 1) {
-        this.selectStep(this.currentStepIndex + 1);
-      } else {
-        // Detener reproducción al llegar al final del tutorial
-        this.currentTimeMs = step.duration;
-        this.isPlaying = false;
-        const playBtn = document.getElementById('btn-play-pause');
-        const fsPlayBtn = document.getElementById('btn-fs-play');
-        if (playBtn) playBtn.innerHTML = '▶ Play';
-        if (fsPlayBtn) fsPlayBtn.innerHTML = '▶ Play';
-        if (this.animFrameId) {
-          cancelAnimationFrame(this.animFrameId);
-          this.animFrameId = null;
+      const step = this.project.steps[this.currentStepIndex];
+      if (step && this.currentTimeMs >= step.duration) {
+        if (this.currentStepIndex < this.project.steps.length - 1) {
+          this.selectStep(this.currentStepIndex + 1);
+        } else {
+          this.selectStep(0);
         }
+      } else {
         this.updateStagePlayback(this.currentTimeMs);
         this.updateTimeDisplay();
-        return;
       }
-    }
 
-    this.updateStagePlayback(this.currentTimeMs);
-    this.updateTimeDisplay();
-    this.animFrameId = requestAnimationFrame(this.tick);
-  };
+      this.animFrameId = requestAnimationFrame(loop);
+    };
+    this.animFrameId = requestAnimationFrame(loop);
+  }
 
   private updateTimeDisplay() {
+    const display = document.getElementById('timeline-time-display');
     const step = this.project.steps[this.currentStepIndex];
-    if (!step) return;
-    const currentSec = (Math.min(this.currentTimeMs, step.duration) / 1000).toFixed(1);
-    const totalSec = (step.duration / 1000).toFixed(1);
-    const timeDisplay = document.getElementById('time-display');
-    const fsTimeDisplay = document.getElementById('fs-time-display');
-    const text = `Paso ${this.currentStepIndex + 1}/${this.project.steps.length} — ${currentSec}s / ${totalSec}s`;
-    if (timeDisplay) timeDisplay.textContent = text;
-    if (fsTimeDisplay) fsTimeDisplay.textContent = text;
+    if (!display || !step) return;
+
+    const curSec = (this.currentTimeMs / 1000).toFixed(2);
+    const totSec = (step.duration / 1000).toFixed(2);
+    display.textContent = `${curSec}s / ${totSec}s (Paso ${this.currentStepIndex + 1}/${this.project.steps.length})`;
   }
 
-  private renderWatermarkHeader(): string {
-    const h = this.project.settings.headerStyle || {
-      text: 'Encuentra las actividades del libro en PuntajeNacional',
-      fontSize: 22,
-      color: '#ffffff',
-      hasShadow: true,
-      shadowColor: 'rgba(0, 0, 0, 0.95)',
-      hasBackground: true,
-      backgroundColor: 'rgba(15, 23, 42, 0.85)',
-      backgroundPadding: 10,
-      borderRadius: 8,
-    };
-
-    const bgCss = h.hasBackground ? `background: ${h.backgroundColor}; padding: 6px ${h.backgroundPadding}px; border-radius: ${h.borderRadius}px; border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(8px);` : `background: transparent; padding: 0; border: none;`;
-    const shadowCss = h.hasShadow ? `text-shadow: 0 2px 8px ${h.shadowColor};` : `text-shadow: none;`;
-
-    return `
-      <div id="top-watermark-header" class="top-right-watermark" style="font-size: ${h.fontSize}px; color: ${h.color}; ${shadowCss} ${bgCss}">
-        ${h.text}
-      </div>
-    `;
-  }
-
-  private updateStageContent() {
+  private async updateStageContent() {
     const stageContent = document.getElementById('stage-content');
     if (!stageContent) return;
 
     const step = this.project.steps[this.currentStepIndex];
     if (!step) {
-      stageContent.innerHTML = `<div style="display: flex; height: 100%; align-items: center; justify-content: center; color: var(--text-muted);">No hay pasos creados</div>`;
+      stageContent.innerHTML = `<div style="display: flex; align-items: center; justify-content: center; height: 100%; color: var(--text-muted);">Sin pasos en el proyecto. Añade un paso con captura para comenzar.</div>`;
       return;
     }
 
-    const isIntro = step.type === 'section';
+    // Fondo global
+    const bgUrl = await this.resolveAssetUrl(this.project.settings.background);
+    if (this.stageEl) {
+      this.stageEl.style.backgroundImage = `url('${bgUrl}')`;
+    }
 
-    if (isIntro) {
-      // Pantalla de Intro Cinematográfica Minimalista con Fade-in Suave
+    if (step.type === 'section') {
       stageContent.innerHTML = `
         <div class="intro-container">
           <h1 class="intro-title-text">
-            ${step.transcript || 'Encuentra las actividades del libro en PuntajeNacional'}
+            ${step.transcript || step.title || this.project.title}
           </h1>
         </div>
       `;
@@ -558,26 +651,17 @@ class CreatorStudio {
       const currentImg = document.getElementById('step-screenshot') as HTMLImageElement | null;
       const currentMockup = document.getElementById('mockup-window');
 
-      // Si ya existe el mockup renderizado en el DOM, actualizamos la imagen internamente
       if (currentMockup && currentImg) {
-        const newSrc = (step.screenshot || 'assets/screenshot_1.webp').replace(/^\/+/, '');
+        const resolvedSrc = await this.resolveAssetUrl(step.screenshot || '');
         const urlBar = document.getElementById('mockup-url-bar');
         if (urlBar) urlBar.textContent = `🔒 ${step.pageTitle || 'https://plataforma.com'}`;
 
-        currentImg.src = newSrc;
+        currentImg.src = resolvedSrc;
         currentImg.style.opacity = '1';
 
-        // Actualizar subtítulo
-        const subBox = document.getElementById('subtitle-box');
         const subText = document.getElementById('subtitle-text');
         if (subText) subText.textContent = step.transcript;
-        if (subBox) {
-          subBox.classList.remove('step-subtitle-enter');
-          void subBox.offsetWidth; // reflow trigger
-          subBox.classList.add('step-subtitle-enter');
-        }
 
-        // Actualizar watermark header si existe con todos los estilos reactivos
         const wm = document.getElementById('top-watermark-header');
         if (wm && this.project.settings.headerStyle) {
           const h = this.project.settings.headerStyle;
@@ -599,19 +683,20 @@ class CreatorStudio {
           }
         }
       } else {
-        // Inicialización del Mockup con animación de entrada y encabezado superior configurable
+        const resolvedSrc = await this.resolveAssetUrl(step.screenshot || '');
         stageContent.innerHTML = `
           <div class="mockup-stage-enter" style="width: 100%; height: 100%; position: relative;">
             ${this.renderWatermarkHeader()}
-
             <div style="display: flex; width: 100%; height: 100%; align-items: center; justify-content: center; padding: 24px 60px 80px 60px;">
               <div style="width: 1540px; height: calc(1540px / 2.1893 + 44px); position: relative;">
-                ${this.renderMockupBrowser(step, true)}
+                ${this.renderMockupBrowser(step, resolvedSrc)}
               </div>
             </div>
             ${this.renderSubtitleOverlay(step)}
           </div>
         `;
+
+        this.setupInteractiveViewportClick();
       }
     }
 
@@ -619,10 +704,63 @@ class CreatorStudio {
     this.renderTimelineTracks();
   }
 
-  private renderMockupBrowser(step: StepItem, hasZoom: boolean): string {
-    const imgSrc = (step.screenshot || 'assets/screenshot_1.webp').replace(/^\/+/, '');
+  private setupInteractiveViewportClick() {
+    const vp = document.getElementById('mockup-viewport');
+    if (!vp) return;
+
+    vp.addEventListener('click', (e) => {
+      const step = this.project.steps[this.currentStepIndex];
+      if (!step || step.type === 'section') return;
+
+      const rect = vp.getBoundingClientRect();
+      const clickX = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+      const clickY = Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height));
+
+      step.clickCoords = {
+        x: +clickX.toFixed(3),
+        y: +clickY.toFixed(3),
+      };
+
+      step.boundingBox = {
+        x: Math.max(0, +(clickX - 0.08).toFixed(3)),
+        y: Math.max(0, +(clickY - 0.04).toFixed(3)),
+        width: 0.16,
+        height: 0.08,
+      };
+
+      this.currentTimeMs = 1200;
+      this.updateStagePlayback(this.currentTimeMs);
+      this.updateInspector();
+      this.showToast(`🎯 Clic fijado en X: ${step.clickCoords.x}, Y: ${step.clickCoords.y}`);
+    });
+  }
+
+  private renderWatermarkHeader(): string {
+    const h = this.project.settings.headerStyle || {
+      text: this.project.title,
+      fontSize: 22,
+      color: '#ffffff',
+      hasShadow: false,
+      shadowColor: 'rgba(0,0,0,0.95)',
+      hasBackground: true,
+      backgroundColor: 'rgba(15, 23, 42, 0.75)',
+      backgroundPadding: 10,
+      borderRadius: 8
+    };
+
+    const bgStyle = h.hasBackground ? `background: ${h.backgroundColor}; padding: 6px ${h.backgroundPadding}px; border-radius: ${h.borderRadius}px; border: 1px solid rgba(255,255,255,0.15); backdrop-filter: blur(8px);` : 'background: transparent; padding: 0;';
+    const shadowStyle = h.hasShadow ? `text-shadow: 0 2px 8px ${h.shadowColor};` : '';
+
     return `
-      <div id="mockup-window" style="width: 100%; height: 100%; background: #1e293b; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.12); display: flex; flex-direction: column; transition: transform 0.6s cubic-bezier(0.25, 1, 0.5, 1);">
+      <div id="top-watermark-header" class="top-right-watermark" style="font-size: ${h.fontSize}px; color: ${h.color}; ${shadowStyle} ${bgStyle}">
+        ${h.text}
+      </div>
+    `;
+  }
+
+  private renderMockupBrowser(step: StepItem, imgSrc: string): string {
+    return `
+      <div id="mockup-window" style="width: 100%; height: 100%; background: #1e293b; border-radius: 12px; overflow: hidden; box-shadow: 0 30px 80px rgba(0,0,0,0.85), 0 0 0 1px rgba(255,255,255,0.12); display: flex; flex-direction: column;">
         <div style="height: 44px; background: rgba(15, 23, 42, 0.95); border-bottom: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; padding: 0 16px; gap: 14px; z-index: 20; flex-shrink: 0;">
           <div style="display: flex; gap: 6px;">
             <div style="width: 12px; height: 12px; border-radius: 50%; background: #ef4444;"></div>
@@ -634,9 +772,9 @@ class CreatorStudio {
           </div>
         </div>
         <div id="mockup-viewport" style="flex: 1; position: relative; overflow: hidden; background: #0b0f19;">
-          <img id="step-screenshot" class="screenshot-img" src="${imgSrc}" onerror="this.onerror=null; this.src='assets/screenshot_1.webp';" />
+          <img id="step-screenshot" class="screenshot-img" src="${imgSrc}" />
           <div id="ripple-container" style="position: absolute; inset: 0; pointer-events: none; z-index: 12;"></div>
-          <div id="mockup-cursor" style="position: absolute; width: 30px; height: 30px; pointer-events: none; z-index: 15; transform: translate(-2px, -2px); display: ${hasZoom ? 'block' : 'none'}; transition: left 0.9s cubic-bezier(0.22, 1, 0.36, 1), top 0.9s cubic-bezier(0.22, 1, 0.36, 1);">
+          <div id="mockup-cursor" style="position: absolute; width: 30px; height: 30px; pointer-events: none; z-index: 15; transform: translate(-2px, -2px); display: ${step.type !== 'section' ? 'block' : 'none'}; transition: left 0.9s cubic-bezier(0.22, 1, 0.36, 1), top 0.9s cubic-bezier(0.22, 1, 0.36, 1);">
             <svg viewBox="0 0 24 24" fill="none" style="filter: drop-shadow(0 4px 10px rgba(0,0,0,0.8));">
               <path d="M5.5 3.21V20.8c0 .45.54.67.85.35l4.86-4.86a.5.5 0 0 1 .35-.15h6.87c.45 0 .67-.54.35-.85L5.5 3.21z" fill="#000000" stroke="#ffffff" stroke-width="1.5"/>
             </svg>
@@ -660,7 +798,6 @@ class CreatorStudio {
     const step = this.project.steps[this.currentStepIndex];
     if (!step) return;
 
-    // 1. Subtítulos y marcas de palabras sincronizadas
     const subTextEl = document.getElementById('subtitle-text');
     if (subTextEl && step.marks && step.marks.length > 0) {
       const html = step.marks.map((m) => {
@@ -675,30 +812,23 @@ class CreatorStudio {
 
     const cursor = document.getElementById('mockup-cursor');
     const img = document.getElementById('step-screenshot') as HTMLElement;
-    const mockupWindow = document.getElementById('mockup-window') as HTMLElement;
     const rippleContainer = document.getElementById('ripple-container');
 
-    // 2. Transición temporal:
-    // Estado A: Vista panorámica completa al inicio (t < zoomTriggerMs)
-    // Estado B: Zoom + Enfoque hacia el clic cuando se activa la acción (t >= zoomTriggerMs)
     const zoomTriggerMs = 700;
     const isZoomState = step.enableZoom && timeMs >= zoomTriggerMs && step.type !== 'section';
 
     if (cursor && step.clickCoords) {
       if (timeMs < zoomTriggerMs) {
-        // En reposo panorámico el cursor descansa centrado o fuera
         cursor.style.left = `50%`;
         cursor.style.top = `60%`;
         cursor.style.opacity = '0.5';
       } else {
-        // Se mueve suavemente a la coordenada objetivo del clic
         cursor.style.left = `${step.clickCoords.x * 100}%`;
         cursor.style.top = `${step.clickCoords.y * 100}%`;
         cursor.style.opacity = '1';
       }
     }
 
-    // 3. Efecto Ripple cuando ocurre el impacto del clic (~1200ms a 1800ms)
     if (rippleContainer && step.clickCoords) {
       const clickTimeMs = 1200;
       if (timeMs >= clickTimeMs && timeMs < clickTimeMs + 650 && isZoomState) {
@@ -713,7 +843,6 @@ class CreatorStudio {
       }
     }
 
-    // 4. Transformación de la captura: Vista Completa -> Zoom 20% con Clamping Matemático
     if (img) {
       if (isZoomState && step.boundingBox) {
         const z = this.project.settings.zoomFactor;
@@ -728,11 +857,8 @@ class CreatorStudio {
         ty = Math.max(minLimit, Math.min(0, ty));
 
         img.style.transform = `scale(${z}) translate(${tx / z}%, ${ty / z}%)`;
-        if (mockupWindow) mockupWindow.style.transform = 'scale(1.025)';
       } else {
-        // Estado A: Captura 100% visible sin recortes
         img.style.transform = 'scale(1) translate(0%, 0%)';
-        if (mockupWindow) mockupWindow.style.transform = 'scale(1)';
       }
     }
   }
@@ -743,106 +869,104 @@ class CreatorStudio {
 
     const step = this.project.steps[this.currentStepIndex];
     if (!step) {
-      panel.innerHTML = `<div style="padding: 20px; color: var(--text-muted); font-size: 13px;">Selecciona un paso para editar sus propiedades.</div>`;
+      panel.innerHTML = `<div style="padding: 20px; color: var(--text-muted); font-size: 13px;">Sin pasos para editar.</div>`;
       return;
     }
 
-    panel.innerHTML = `
-      <div style="padding: 16px 20px; border-bottom: 1px solid var(--bg-panel-border);">
-        <span style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; color: #60a5fa; font-weight: 700;">Inspector de Paso</span>
-        <h2 style="font-family: 'Plus Jakarta Sans'; font-size: 16px; font-weight: 700; margin-top: 4px;">Paso ${this.currentStepIndex + 1}: ${step.title || 'Sin título'}</h2>
-      </div>
+    const isSection = step.type === 'section';
 
-      <div style="padding: 20px; display: flex; flex-direction: column; gap: 18px; flex: 1;">
-        <div>
-          <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">⏱ Duración del Paso (milisegundos)</label>
-          <div style="display: flex; gap: 8px; align-items: center;">
-            <input type="number" id="step-duration-input" value="${step.duration}" step="100" min="500" style="flex: 1; background: rgba(0,0,0,0.3); border: 1px solid var(--bg-panel-border); color: #fff; padding: 8px 12px; border-radius: 6px; outline: none; font-size: 13px;" />
-            <span style="font-size: 12px; color: var(--text-muted);">${(step.duration / 1000).toFixed(1)}s</span>
-          </div>
+    panel.innerHTML = `
+      <!-- Propiedades del Paso -->
+      <div class="inspector-section">
+        <div class="inspector-section-title">
+          <span>⚙️</span> Propiedades del Paso #${this.currentStepIndex + 1}
         </div>
 
-        <div>
-          <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">📝 Texto de Subtítulo / Locución</label>
-          <textarea id="step-transcript-input" rows="3" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--bg-panel-border); color: #fff; padding: 10px 12px; border-radius: 6px; outline: none; font-size: 13px; resize: vertical; line-height: 1.4;">${step.transcript}</textarea>
-          <button id="btn-auto-marks" class="btn-glass" style="margin-top: 6px; width: 100%; justify-content: center; font-size: 11px;">
-            ⚡ Auto-sincronizar marcas de palabras
+        <div class="inspector-field">
+          <label class="inspector-label">Tipo de Paso</label>
+          <select id="step-type-select" class="inspector-input">
+            <option value="click" ${step.type === 'click' ? 'selected' : ''}>Paso con Clic & Mockup</option>
+            <option value="section" ${step.type === 'section' ? 'selected' : ''}>Intro / Título de Sección</option>
+          </select>
+        </div>
+
+        <div class="inspector-field">
+          <label class="inspector-label">Duración (segundos)</label>
+          <input id="step-duration-input" type="number" step="0.5" min="1" max="20" class="inspector-input" value="${(step.duration / 1000).toFixed(1)}" />
+        </div>
+
+        <div class="inspector-field">
+          <label class="inspector-label">${isSection ? 'Título del Tutorial / Sección' : 'Subtítulo / Locución del Paso'}</label>
+          <textarea id="step-transcript-input" class="inspector-textarea">${step.transcript || ''}</textarea>
+        </div>
+
+        ${!isSection ? `
+          <div class="inspector-field">
+            <label class="inspector-label">URL de la Barra del Navegador</label>
+            <input id="step-url-input" class="inspector-input" value="${step.pageTitle || 'https://plataforma.com'}" />
+          </div>
+
+          <div style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2); border-radius: 8px; padding: 12px; margin-top: 12px;">
+            <div style="font-size: 11px; font-weight: 700; color: #93c5fd; margin-bottom: 8px;">🎯 Coordenadas del Clic (Interactiva)</div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;">
+              <div>
+                <label style="font-size: 10px; color: var(--text-muted);">X (0.0 a 1.0)</label>
+                <input id="step-click-x" type="number" step="0.01" class="inspector-input" value="${(step.clickCoords?.x ?? 0.5).toFixed(3)}" />
+              </div>
+              <div>
+                <label style="font-size: 10px; color: var(--text-muted);">Y (0.0 a 1.0)</label>
+                <input id="step-click-y" type="number" step="0.01" class="inspector-input" value="${(step.clickCoords?.y ?? 0.5).toFixed(3)}" />
+              </div>
+            </div>
+            <div style="font-size: 10px; color: var(--text-muted); margin-top: 6px;">💡 Haz clic directo en el mockup para calibrar.</div>
+          </div>
+        ` : ''}
+
+        <div style="display: flex; gap: 8px; margin-top: 14px;">
+          <button id="btn-auto-marks" class="btn-glass" style="flex: 1; justify-content: center;">
+            <span>⚡</span> Auto-Sincronizar
+          </button>
+          <button id="btn-delete-step" class="btn-glass" style="color: #f87171; border-color: rgba(239, 68, 68, 0.3);">
+            <span>🗑️</span>
           </button>
         </div>
+      </div>
 
-        <div style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: 8px; border: 1px solid var(--bg-panel-border);">
-          <div style="display: flex; align-items: center; justify-content: space-between;">
-            <div>
-              <div style="font-size: 13px; font-weight: 600;">🔍 Zoom & Centrado Dinámico</div>
-              <div style="font-size: 11px; color: var(--text-muted);">Acercamiento 20% sobre el objetivo</div>
-            </div>
-            <input type="checkbox" id="step-zoom-switch" ${step.enableZoom ? 'checked' : ''} style="width: 18px; height: 18px; cursor: pointer;" />
-          </div>
+      <!-- Ajustes Globales del Tutorial -->
+      <div class="inspector-section">
+        <div class="inspector-section-title">
+          <span>🎨</span> Personalización Global
         </div>
 
-        <div>
-          <label style="font-size: 12px; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 6px;">🎯 Coordenadas del Clic (Normalizadas 0..1)</label>
-          <div style="display: flex; gap: 10px;">
-            <div style="flex: 1;">
-              <span style="font-size: 10px; color: var(--text-muted);">X:</span>
-              <input type="number" id="click-x-input" value="${step.clickCoords ? step.clickCoords.x.toFixed(3) : 0.5}" step="0.01" min="0" max="1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--bg-panel-border); color: #fff; padding: 6px 10px; border-radius: 6px; outline: none; font-size: 12px;" />
-            </div>
-            <div style="flex: 1;">
-              <span style="font-size: 10px; color: var(--text-muted);">Y:</span>
-              <input type="number" id="click-y-input" value="${step.clickCoords ? step.clickCoords.y.toFixed(3) : 0.5}" step="0.01" min="0" max="1" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--bg-panel-border); color: #fff; padding: 6px 10px; border-radius: 6px; outline: none; font-size: 12px;" />
-            </div>
-          </div>
+        <div class="inspector-field">
+          <label class="inspector-label">Texto Superior / Watermark</label>
+          <input id="hdr-text-input" class="inspector-input" value="${this.project.settings.headerStyle?.text || this.project.title}" />
         </div>
 
-        <!-- Sección de Encabezado Superior Personalizable -->
-        <div style="background: rgba(15, 23, 42, 0.6); padding: 14px; border-radius: 8px; border: 1px solid var(--bg-panel-border); display: flex; flex-direction: column; gap: 12px;">
-          <div style="font-size: 12px; font-weight: 700; color: #60a5fa; text-transform: uppercase; letter-spacing: 0.5px;">
-            🏷 Encabezado Superior
-          </div>
-
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px;" class="inspector-field">
           <div>
-            <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Texto del Encabezado:</label>
-            <input type="text" id="hdr-text-input" value="${this.project.settings.headerStyle?.text || 'Encuentra las actividades del libro en PuntajeNacional'}" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--bg-panel-border); color: #fff; padding: 6px 10px; border-radius: 6px; outline: none; font-size: 12px;" />
+            <label class="inspector-label">Tamaño (px)</label>
+            <input id="hdr-size-input" type="number" min="12" max="36" class="inspector-input" value="${this.project.settings.headerStyle?.fontSize || 22}" />
           </div>
-
-          <div style="display: flex; gap: 10px; align-items: center;">
-            <div style="flex: 1;">
-              <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Tamaño (px):</label>
-              <input type="number" id="hdr-size-input" value="${this.project.settings.headerStyle?.fontSize || 22}" min="12" max="60" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--bg-panel-border); color: #fff; padding: 6px 8px; border-radius: 6px; outline: none; font-size: 12px;" />
-            </div>
-            <div style="width: 70px;">
-              <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 4px;">Color Texto:</label>
-              <input type="color" id="hdr-color-input" value="${this.project.settings.headerStyle?.color || '#ffffff'}" style="width: 100%; height: 32px; background: transparent; border: 1px solid var(--bg-panel-border); border-radius: 6px; cursor: pointer;" />
-            </div>
-          </div>
-
-          <div style="display: flex; align-items: center; justify-content: space-between; padding-top: 4px;">
-            <span style="font-size: 12px; color: #fff;">Sombra de texto</span>
-            <input type="checkbox" id="hdr-shadow-switch" ${this.project.settings.headerStyle?.hasShadow ? 'checked' : ''} style="width: 16px; height: 16px; cursor: pointer;" />
-          </div>
-
-          <div style="display: flex; align-items: center; justify-content: space-between; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 8px;">
-            <span style="font-size: 12px; color: #fff;">Fondo rectangular</span>
-            <input type="checkbox" id="hdr-bg-switch" ${this.project.settings.headerStyle?.hasBackground ? 'checked' : ''} style="width: 16px; height: 16px; cursor: pointer;" />
-          </div>
-
-          <div id="hdr-bg-options" style="display: ${this.project.settings.headerStyle?.hasBackground ? 'flex' : 'none'}; flex-direction: column; gap: 8px; padding-left: 6px; border-left: 2px solid #3b82f6;">
-            <div style="display: flex; gap: 10px; align-items: center;">
-              <div style="flex: 1;">
-                <label style="font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 2px;">Color de Fondo:</label>
-                <input type="color" id="hdr-bgcolor-input" value="#0f172a" style="width: 100%; height: 28px; background: transparent; border: 1px solid var(--bg-panel-border); border-radius: 4px; cursor: pointer;" />
-              </div>
-              <div style="flex: 1;">
-                <label style="font-size: 10px; color: var(--text-muted); display: block; margin-bottom: 2px;">Extensión / Padding (px):</label>
-                <input type="number" id="hdr-padding-input" value="${this.project.settings.headerStyle?.backgroundPadding || 14}" min="4" max="40" style="width: 100%; background: rgba(0,0,0,0.3); border: 1px solid var(--bg-panel-border); color: #fff; padding: 4px 6px; border-radius: 4px; outline: none; font-size: 11px;" />
-              </div>
-            </div>
+          <div>
+            <label class="inspector-label">Color Texto</label>
+            <input id="hdr-color-input" type="color" class="inspector-input" value="${this.project.settings.headerStyle?.color || '#ffffff'}" style="height: 38px; padding: 2px;" />
           </div>
         </div>
 
-        <div style="margin-top: auto; padding-top: 16px;">
-          <button id="btn-delete-step" class="btn-glass" style="width: 100%; justify-content: center; color: #ef4444; border-color: rgba(239, 68, 68, 0.3);">
-            🗑 Eliminar Paso
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+          <span class="inspector-label" style="margin: 0;">Sombra de Texto</span>
+          <input id="hdr-shadow-switch" type="checkbox" ${this.project.settings.headerStyle?.hasShadow ? 'checked' : ''} />
+        </div>
+
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+          <span class="inspector-label" style="margin: 0;">Fondo del Encabezado</span>
+          <input id="hdr-bg-switch" type="checkbox" ${this.project.settings.headerStyle?.hasBackground ? 'checked' : ''} />
+        </div>
+
+        <div style="margin-top: 16px;">
+          <button id="btn-change-global-bg" class="btn-glass" style="width: 100%; justify-content: center;">
+            <span>🖼️</span> Cambiar Fondo Global del Video
           </button>
         </div>
       </div>
@@ -852,147 +976,73 @@ class CreatorStudio {
   }
 
   private bindInspectorEvents(step: StepItem) {
+    // Tipo de paso
+    document.getElementById('step-type-select')?.addEventListener('change', (e) => {
+      step.type = (e.target as HTMLSelectElement).value as any;
+      if (step.type === 'section') {
+        step.enableZoom = false;
+      } else {
+        step.enableZoom = true;
+        if (!step.screenshot) step.screenshot = 'assets/screenshot_1.webp';
+      }
+      this.updateStageContent();
+      this.updateInspector();
+    });
+
+    // Duración
     document.getElementById('step-duration-input')?.addEventListener('input', (e) => {
-      const val = parseInt((e.target as HTMLInputElement).value, 10);
-      if (!isNaN(val) && val >= 500) {
-        step.duration = val;
+      const val = parseFloat((e.target as HTMLInputElement).value);
+      if (!isNaN(val) && val > 0) {
+        step.duration = Math.round(val * 1000);
+        this.autoGenerateMarks(step);
         this.renderTimelineTracks();
       }
     });
 
+    // Transcript / Subtítulo
     document.getElementById('step-transcript-input')?.addEventListener('input', (e) => {
       step.transcript = (e.target as HTMLTextAreaElement).value;
-      this.updateStageContent();
-    });
-
-    document.getElementById('btn-auto-marks')?.addEventListener('click', () => {
+      if (step.type === 'section') {
+        step.title = step.transcript;
+      }
       this.autoGenerateMarks(step);
       this.updateStageContent();
-      alert('Marcas de tiempo calculadas proporcionalmente para cada palabra.');
     });
 
-    document.getElementById('step-zoom-switch')?.addEventListener('change', (e) => {
-      step.enableZoom = (e.target as HTMLInputElement).checked;
-      this.updateStageContent();
+    // URL
+    document.getElementById('step-url-input')?.addEventListener('input', (e) => {
+      step.pageTitle = (e.target as HTMLInputElement).value;
+      const urlBar = document.getElementById('mockup-url-bar');
+      if (urlBar) urlBar.textContent = `🔒 ${step.pageTitle}`;
     });
 
-    document.getElementById('click-x-input')?.addEventListener('input', (e) => {
-      if (!step.clickCoords) step.clickCoords = { x: 0.5, y: 0.5 };
-      step.clickCoords.x = parseFloat((e.target as HTMLInputElement).value) || 0.5;
-      this.updateStagePlayback(this.currentTimeMs);
-    });
-
-    const yInput = document.getElementById('click-y-input') as HTMLInputElement | null;
-    yInput?.addEventListener('input', (e) => {
-      if (!step.clickCoords) step.clickCoords = { x: 0.5, y: 0.5 };
-      step.clickCoords.y = parseFloat((e.target as HTMLInputElement).value) || 0.5;
-      this.updateStagePlayback(this.currentTimeMs);
-    });
-
-    // Invertir flechas de teclado: Flecha Arriba = Mover cursor hacia ARRIBA (restar Y), Flecha Abajo = Mover cursor hacia ABAJO (sumar Y)
-    yInput?.addEventListener('keydown', (e) => {
-      if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
-        e.preventDefault();
-        const stepDelta = e.shiftKey ? 0.05 : 0.01;
-        if (!step.clickCoords) step.clickCoords = { x: 0.5, y: 0.5 };
-        
-        if (e.key === 'ArrowUp') {
-          // Mover hacia ARRIBA en pantalla
-          step.clickCoords.y = Math.max(0, +(step.clickCoords.y - stepDelta).toFixed(3));
-        } else {
-          // Mover hacia ABAJO en pantalla
-          step.clickCoords.y = Math.min(1, +(step.clickCoords.y + stepDelta).toFixed(3));
-        }
-        
-        yInput.value = step.clickCoords.y.toFixed(3);
+    // Clics manuales
+    document.getElementById('step-click-x')?.addEventListener('input', (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value);
+      if (!isNaN(val) && step.clickCoords) {
+        step.clickCoords.x = val;
+        if (step.boundingBox) step.boundingBox.x = Math.max(0, val - step.boundingBox.width / 2);
         this.updateStagePlayback(this.currentTimeMs);
       }
     });
 
-    // Controles de Encabezado Superior en tiempo real
-    const updateHeader = () => {
-      if (!this.project.settings.headerStyle) {
-        this.project.settings.headerStyle = {
-          text: 'Encuentra las actividades del libro en PuntajeNacional',
-          fontSize: 22,
-          color: '#ffffff',
-          hasShadow: true,
-          shadowColor: 'rgba(0, 0, 0, 0.95)',
-          hasBackground: true,
-          backgroundColor: 'rgba(15, 23, 42, 0.85)',
-          backgroundPadding: 14,
-          borderRadius: 8,
-        };
+    document.getElementById('step-click-y')?.addEventListener('input', (e) => {
+      const val = parseFloat((e.target as HTMLInputElement).value);
+      if (!isNaN(val) && step.clickCoords) {
+        step.clickCoords.y = val;
+        if (step.boundingBox) step.boundingBox.y = Math.max(0, val - step.boundingBox.height / 2);
+        this.updateStagePlayback(this.currentTimeMs);
       }
-      const wm = document.getElementById('top-watermark-header');
-      if (wm) {
-        const h = this.project.settings.headerStyle;
-        wm.textContent = h.text;
-        wm.style.fontSize = `${h.fontSize}px`;
-        wm.style.color = h.color;
-        wm.style.textShadow = h.hasShadow ? `0 2px 8px ${h.shadowColor}` : 'none';
-        if (h.hasBackground) {
-          wm.style.background = h.backgroundColor;
-          wm.style.padding = `6px ${h.backgroundPadding}px`;
-          wm.style.borderRadius = `${h.borderRadius}px`;
-          wm.style.border = '1px solid rgba(255,255,255,0.15)';
-          wm.style.backdropFilter = 'blur(8px)';
-        } else {
-          wm.style.background = 'transparent';
-          wm.style.padding = '0';
-          wm.style.border = 'none';
-          wm.style.backdropFilter = 'none';
-        }
-      }
-    };
-
-    document.getElementById('hdr-text-input')?.addEventListener('input', (e) => {
-      if (!this.project.settings.headerStyle) updateHeader();
-      this.project.settings.headerStyle!.text = (e.target as HTMLInputElement).value;
-      updateHeader();
     });
 
-    document.getElementById('hdr-size-input')?.addEventListener('input', (e) => {
-      if (!this.project.settings.headerStyle) updateHeader();
-      this.project.settings.headerStyle!.fontSize = parseInt((e.target as HTMLInputElement).value, 10) || 20;
-      updateHeader();
+    // Auto-marks
+    document.getElementById('btn-auto-marks')?.addEventListener('click', () => {
+      this.autoGenerateMarks(step);
+      this.updateStagePlayback(this.currentTimeMs);
+      this.showToast('⚡ Marcas de palabras sincronizadas');
     });
 
-    document.getElementById('hdr-color-input')?.addEventListener('input', (e) => {
-      if (!this.project.settings.headerStyle) updateHeader();
-      this.project.settings.headerStyle!.color = (e.target as HTMLInputElement).value;
-      updateHeader();
-    });
-
-    document.getElementById('hdr-shadow-switch')?.addEventListener('change', (e) => {
-      if (!this.project.settings.headerStyle) updateHeader();
-      this.project.settings.headerStyle!.hasShadow = (e.target as HTMLInputElement).checked;
-      updateHeader();
-    });
-
-    document.getElementById('hdr-bg-switch')?.addEventListener('change', (e) => {
-      if (!this.project.settings.headerStyle) updateHeader();
-      const isChecked = (e.target as HTMLInputElement).checked;
-      this.project.settings.headerStyle!.hasBackground = isChecked;
-      const opts = document.getElementById('hdr-bg-options');
-      if (opts) opts.style.display = isChecked ? 'flex' : 'none';
-      updateHeader();
-    });
-
-    document.getElementById('hdr-bgcolor-input')?.addEventListener('input', (e) => {
-      if (!this.project.settings.headerStyle) updateHeader();
-      const hex = (e.target as HTMLInputElement).value;
-      // Convertir hex a fondo con opacidad suave
-      this.project.settings.headerStyle!.backgroundColor = hex;
-      updateHeader();
-    });
-
-    document.getElementById('hdr-padding-input')?.addEventListener('input', (e) => {
-      if (!this.project.settings.headerStyle) updateHeader();
-      this.project.settings.headerStyle!.backgroundPadding = parseInt((e.target as HTMLInputElement).value, 10) || 12;
-      updateHeader();
-    });
-
+    // Eliminar paso
     document.getElementById('btn-delete-step')?.addEventListener('click', () => {
       if (this.project.steps.length <= 1) {
         alert('No puedes eliminar el único paso restante.');
@@ -1002,6 +1052,69 @@ class CreatorStudio {
         this.project.steps.splice(this.currentStepIndex, 1);
         this.currentStepIndex = Math.max(0, this.currentStepIndex - 1);
         this.selectStep(this.currentStepIndex);
+      }
+    });
+
+    // Encabezado Superior
+    document.getElementById('hdr-text-input')?.addEventListener('input', (e) => {
+      if (!this.project.settings.headerStyle) return;
+      this.project.settings.headerStyle.text = (e.target as HTMLInputElement).value;
+      this.updateStageContent();
+    });
+
+    document.getElementById('hdr-size-input')?.addEventListener('input', (e) => {
+      if (!this.project.settings.headerStyle) return;
+      this.project.settings.headerStyle.fontSize = parseInt((e.target as HTMLInputElement).value, 10) || 22;
+      this.updateStageContent();
+    });
+
+    document.getElementById('hdr-color-input')?.addEventListener('input', (e) => {
+      if (!this.project.settings.headerStyle) return;
+      this.project.settings.headerStyle.color = (e.target as HTMLInputElement).value;
+      this.updateStageContent();
+    });
+
+    document.getElementById('hdr-shadow-switch')?.addEventListener('change', (e) => {
+      if (!this.project.settings.headerStyle) return;
+      this.project.settings.headerStyle.hasShadow = (e.target as HTMLInputElement).checked;
+      this.updateStageContent();
+    });
+
+    document.getElementById('hdr-bg-switch')?.addEventListener('change', (e) => {
+      if (!this.project.settings.headerStyle) return;
+      this.project.settings.headerStyle.hasBackground = (e.target as HTMLInputElement).checked;
+      this.updateStageContent();
+    });
+
+    // Cambiar Fondo Global
+    document.getElementById('btn-change-global-bg')?.addEventListener('click', async () => {
+      try {
+        const selected = await open({
+          multiple: false,
+          directory: false,
+          title: 'Seleccionar imagen de fondo global',
+          filters: [{ name: 'Imágenes', extensions: ['webp', 'png', 'jpg', 'jpeg'] }]
+        });
+
+        if (!selected) return;
+        const bgPath = Array.isArray(selected) ? selected[0] : selected;
+        if (!bgPath) return;
+
+        let relativeBg = bgPath;
+        if (this.projectDir) {
+          relativeBg = await invoke<string>('set_project_background', {
+            projectDir: this.projectDir,
+            sourceBgPath: bgPath
+          });
+        }
+
+        this.project.settings.background = relativeBg;
+        await this.updateStageContent();
+        this.saveProjectData(false);
+        this.showToast('🖼️ Fondo global actualizado');
+      } catch (e) {
+        console.error('Error actualizando fondo:', e);
+        this.showToast(`❌ Error actualizando fondo: ${e}`);
       }
     });
   }
@@ -1032,14 +1145,17 @@ class CreatorStudio {
     trackContainer.innerHTML = this.project.steps.map((st, i) => {
       const isActive = i === this.currentStepIndex;
       const widthPx = Math.max(100, (st.duration / 1000) * 35);
+      const isIntro = st.type === 'section';
       return `
         <div class="track-step-block ${isActive ? 'active' : ''}" style="width: ${widthPx}px; flex-shrink: 0;" data-index="${i}">
           <div style="display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-size: 11px; font-weight: 700; color: ${isActive ? '#93c5fd' : '#cbd5e1'};">#${i + 1}</span>
+            <span style="font-size: 11px; font-weight: 700; color: ${isActive ? '#93c5fd' : '#cbd5e1'};">
+              ${isIntro ? '🎬 Intro' : `#${i + 1}`}
+            </span>
             <span style="font-size: 10px; color: var(--text-muted); font-family: monospace;">${(st.duration / 1000).toFixed(1)}s</span>
           </div>
           <div style="font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-muted);">
-            ${st.transcript.slice(0, 18) || 'Sin texto'}...
+            ${st.transcript.slice(0, 18) || (isIntro ? 'Título Intro' : 'Sin texto')}...
           </div>
         </div>
       `;
@@ -1051,26 +1167,6 @@ class CreatorStudio {
         this.selectStep(idx);
       });
     });
-  }
-
-  private addNewStep() {
-    const newIdx = this.project.steps.length;
-    const newStep: StepItem = {
-      id: `step-${Date.now()}`,
-      type: 'click',
-      title: `Paso ${newIdx + 1}`,
-      transcript: 'Haz clic en el siguiente elemento para continuar.',
-      screenshot: '/assets/screenshot_1.webp',
-      duration: 4000,
-      pageTitle: 'MiPlataforma.com',
-      enableZoom: true,
-      boundingBox: { x: 0.5, y: 0.5, width: 0.1, height: 0.05 },
-      clickCoords: { x: 0.5, y: 0.5 },
-      marks: [],
-    };
-    this.autoGenerateMarks(newStep);
-    this.project.steps.push(newStep);
-    this.selectStep(newIdx);
   }
 }
 
