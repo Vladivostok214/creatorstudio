@@ -1,0 +1,33 @@
+# Node & Web Build
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Rust & Tauri Target Binaries
+src-tauri/target/
+
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+
+# Video Exports and Temporary Test Frames
+*.mp4
+test_*.png
+
+# Logs & Editor Configuration
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.DS_Store
+Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea/

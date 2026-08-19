@@ -1,0 +1,582 @@
+{
+  "settings": {
+    "resolution": {
+      "width": 1920,
+      "height": 1080
+    },
+    "fps": 30,
+    "theme": "mac_dark",
+    "background": "/assets/guideless_bg.webp",
+    "zoomFactor": 1.2,
+    "clickAnimationDurationMs": 1100,
+    "headerStyle": {
+      "text": "Encuentra las actividades del libro en PuntajeNacional",
+      "fontSize": 29,
+      "color": "#ffffff",
+      "hasShadow": false,
+      "shadowColor": "rgba(0, 0, 0, 0.95)",
+      "hasBackground": true,
+      "backgroundColor": "rgba(15, 23, 42, 0.75)",
+      "backgroundPadding": 22,
+      "borderRadius": 8
+    }
+  },
+  "steps": [
+    {
+      "id": "step-1",
+      "type": "section",
+      "title": "Encuentra las actividades del libro en PuntajeNacional",
+      "transcript": "Encuentra las actividades del libro en PuntajeNacional.",
+      "audio": "assets/audio_0.mp3",
+      "screenshot": "assets/screenshot_1.webp",
+      "duration": 3000,
+      "pageTitle": "PuntajeNacional.cl",
+      "enableZoom": false,
+      "boundingBox": {
+        "x": 0.5,
+        "y": 0.5,
+        "width": 0.1,
+        "height": 0.05
+      },
+      "clickCoords": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "marks": [
+        {
+          "text": "Encuentra",
+          "startMs": 400,
+          "endMs": 816.6666666666667
+        },
+        {
+          "text": "las",
+          "startMs": 816.6666666666667,
+          "endMs": 1233.3333333333335
+        },
+        {
+          "text": "actividades",
+          "startMs": 1233.3333333333335,
+          "endMs": 1650
+        },
+        {
+          "text": "del",
+          "startMs": 1650,
+          "endMs": 2066.666666666667
+        },
+        {
+          "text": "libro",
+          "startMs": 2066.666666666667,
+          "endMs": 2483.3333333333335
+        },
+        {
+          "text": "en",
+          "startMs": 2483.3333333333335,
+          "endMs": 2900
+        },
+        {
+          "text": "PuntajeNacional,",
+          "startMs": 2900,
+          "endMs": 3316.666666666667
+        },
+        {
+          "text": "comenzando",
+          "startMs": 3316.666666666667,
+          "endMs": 3733.3333333333335
+        },
+        {
+          "text": "por",
+          "startMs": 3733.3333333333335,
+          "endMs": 4150
+        },
+        {
+          "text": "abrir",
+          "startMs": 4150,
+          "endMs": 4566.666666666667
+        },
+        {
+          "text": "el",
+          "startMs": 4566.666666666667,
+          "endMs": 4983.333333333334
+        },
+        {
+          "text": "sitio.",
+          "startMs": 4983.333333333334,
+          "endMs": 5400
+        }
+      ]
+    },
+    {
+      "id": "step-2",
+      "type": "flow",
+      "title": "Haz clic en Iniciar sesión",
+      "transcript": "Haz clic en Iniciar sesión para abrir la pantalla de ingreso.",
+      "audio": "assets/audio_1.mp3",
+      "screenshot": "assets/screenshot_1.webp",
+      "duration": 3410,
+      "pageTitle": "PuntajeNacional.cl",
+      "enableZoom": true,
+      "boundingBox": {
+        "x": 0.8659342924753824,
+        "y": 0.006944444444444444,
+        "width": 0.11375325918197632,
+        "height": 0.07727920227920228
+      },
+      "clickCoords": {
+        "x": 0.919921875,
+        "y": 0.04131054131054131
+      },
+      "marks": [
+        {
+          "text": "Haz",
+          "startMs": 200,
+          "endMs": 464.54545454545456
+        },
+        {
+          "text": "clic",
+          "startMs": 464.54545454545456,
+          "endMs": 729.0909090909091
+        },
+        {
+          "text": "en",
+          "startMs": 729.0909090909091,
+          "endMs": 993.6363636363637
+        },
+        {
+          "text": "Iniciar",
+          "startMs": 993.6363636363637,
+          "endMs": 1258.1818181818182
+        },
+        {
+          "text": "sesión",
+          "startMs": 1258.1818181818182,
+          "endMs": 1522.7272727272727
+        },
+        {
+          "text": "para",
+          "startMs": 1522.7272727272727,
+          "endMs": 1787.2727272727275
+        },
+        {
+          "text": "abrir",
+          "startMs": 1787.2727272727275,
+          "endMs": 2051.818181818182
+        },
+        {
+          "text": "la",
+          "startMs": 2051.818181818182,
+          "endMs": 2316.3636363636365
+        },
+        {
+          "text": "pantalla",
+          "startMs": 2316.3636363636365,
+          "endMs": 2580.909090909091
+        },
+        {
+          "text": "de",
+          "startMs": 2580.909090909091,
+          "endMs": 2845.4545454545455
+        },
+        {
+          "text": "ingreso.",
+          "startMs": 2845.4545454545455,
+          "endMs": 3110
+        }
+      ]
+    },
+    {
+      "id": "step-3",
+      "type": "text",
+      "title": "Ingresa tu Correo o RUT",
+      "transcript": "Ingresa tu correo electrónico o RUT en el campo de texto.",
+      "audio": "assets/audio_2.mp3",
+      "screenshot": "assets/screenshot_2.webp",
+      "duration": 3410,
+      "pageTitle": "PuntajeNacional.cl",
+      "enableZoom": true,
+      "boundingBox": {
+        "x": 0.3658854166666667,
+        "y": 0.30548432613709714,
+        "width": 0.2682291666666667,
+        "height": 0.07772435897435898
+      },
+      "clickCoords": {
+        "x": 0.5078125,
+        "y": 0.42
+      },
+      "marks": [
+        {
+          "text": "Ingresa",
+          "startMs": 200,
+          "endMs": 464.54545454545456
+        },
+        {
+          "text": "tu",
+          "startMs": 464.54545454545456,
+          "endMs": 729.0909090909091
+        },
+        {
+          "text": "correo",
+          "startMs": 729.0909090909091,
+          "endMs": 993.6363636363637
+        },
+        {
+          "text": "electrónico",
+          "startMs": 993.6363636363637,
+          "endMs": 1258.1818181818182
+        },
+        {
+          "text": "o",
+          "startMs": 1258.1818181818182,
+          "endMs": 1522.7272727272727
+        },
+        {
+          "text": "RUT",
+          "startMs": 1522.7272727272727,
+          "endMs": 1787.2727272727275
+        },
+        {
+          "text": "en",
+          "startMs": 1787.2727272727275,
+          "endMs": 2051.818181818182
+        },
+        {
+          "text": "el",
+          "startMs": 2051.818181818182,
+          "endMs": 2316.3636363636365
+        },
+        {
+          "text": "campo",
+          "startMs": 2316.3636363636365,
+          "endMs": 2580.909090909091
+        },
+        {
+          "text": "de",
+          "startMs": 2580.909090909091,
+          "endMs": 2845.4545454545455
+        },
+        {
+          "text": "texto.",
+          "startMs": 2845.4545454545455,
+          "endMs": 3110
+        }
+      ]
+    },
+    {
+      "id": "step-4",
+      "type": "flow",
+      "title": "Haz clic en Ingresar",
+      "transcript": "Haz clic en Ingresar para entrar a tu cuenta.",
+      "audio": "assets/audio_3.mp3",
+      "screenshot": "assets/screenshot_3.webp",
+      "duration": 1600,
+      "pageTitle": "PuntajeNacional.cl",
+      "enableZoom": true,
+      "boundingBox": {
+        "x": 0.3658854166666667,
+        "y": 0.4986823535712696,
+        "width": 0.2682291666666667,
+        "height": 0.07995014245014245
+      },
+      "clickCoords": {
+        "x": 0.4817708333333333,
+        "y": 0.5299145299145299
+      },
+      "marks": [
+        {
+          "text": "Haz",
+          "startMs": 200,
+          "endMs": 476.6666666666667
+        },
+        {
+          "text": "clic",
+          "startMs": 476.6666666666667,
+          "endMs": 753.3333333333334
+        },
+        {
+          "text": "en",
+          "startMs": 753.3333333333334,
+          "endMs": 1030
+        },
+        {
+          "text": "Ingresar",
+          "startMs": 1030,
+          "endMs": 1306.6666666666667
+        },
+        {
+          "text": "para",
+          "startMs": 1306.6666666666667,
+          "endMs": 1583.3333333333335
+        },
+        {
+          "text": "entrar",
+          "startMs": 1583.3333333333335,
+          "endMs": 1860
+        },
+        {
+          "text": "a",
+          "startMs": 1860,
+          "endMs": 2136.666666666667
+        },
+        {
+          "text": "tu",
+          "startMs": 2136.666666666667,
+          "endMs": 2413.3333333333335
+        },
+        {
+          "text": "cuenta.",
+          "startMs": 2413.3333333333335,
+          "endMs": 2690
+        }
+      ]
+    },
+    {
+      "id": "step-5",
+      "type": "flow",
+      "title": "Haz clic en Libros",
+      "transcript": "Selecciona Libros en el menú para abrir la sección de textos.",
+      "audio": "assets/audio_4.mp3",
+      "screenshot": "assets/screenshot_4.webp",
+      "duration": 3300,
+      "pageTitle": "puntajenacional.cl",
+      "enableZoom": true,
+      "boundingBox": {
+        "x": 0,
+        "y": 0.3149216480744191,
+        "width": 0.15625,
+        "height": 0.07977207977207977
+      },
+      "clickCoords": {
+        "x": 0.041666666666666664,
+        "y": 0.44
+      },
+      "marks": [
+        {
+          "text": "Selecciona",
+          "startMs": 200,
+          "endMs": 464.54545454545456
+        },
+        {
+          "text": "Libros",
+          "startMs": 464.54545454545456,
+          "endMs": 729.0909090909091
+        },
+        {
+          "text": "en",
+          "startMs": 729.0909090909091,
+          "endMs": 993.6363636363637
+        },
+        {
+          "text": "el",
+          "startMs": 993.6363636363637,
+          "endMs": 1258.1818181818182
+        },
+        {
+          "text": "menú",
+          "startMs": 1258.1818181818182,
+          "endMs": 1522.7272727272727
+        },
+        {
+          "text": "para",
+          "startMs": 1522.7272727272727,
+          "endMs": 1787.2727272727275
+        },
+        {
+          "text": "abrir",
+          "startMs": 1787.2727272727275,
+          "endMs": 2051.818181818182
+        },
+        {
+          "text": "la",
+          "startMs": 2051.818181818182,
+          "endMs": 2316.3636363636365
+        },
+        {
+          "text": "sección",
+          "startMs": 2316.3636363636365,
+          "endMs": 2580.909090909091
+        },
+        {
+          "text": "de",
+          "startMs": 2580.909090909091,
+          "endMs": 2845.4545454545455
+        },
+        {
+          "text": "textos.",
+          "startMs": 2845.4545454545455,
+          "endMs": 3110
+        }
+      ]
+    },
+    {
+      "id": "step-6",
+      "type": "flow",
+      "title": "Haz clic en Ver actividades",
+      "transcript": "Haz clic en Ver actividades para ver las actividades disponibles del libro.",
+      "audio": "assets/audio_5.mp3",
+      "screenshot": "assets/screenshot_5.webp",
+      "duration": 6000,
+      "pageTitle": "puntajenacional.cl",
+      "enableZoom": true,
+      "boundingBox": {
+        "x": 0.19266764322916666,
+        "y": 0.6624465898910479,
+        "width": 0.08155110975106557,
+        "height": 0.0688924490556418
+      },
+      "clickCoords": {
+        "x": 0.28,
+        "y": 0.64
+      },
+      "marks": [
+        {
+          "text": "Haz",
+          "startMs": 400,
+          "endMs": 816.6666666666667
+        },
+        {
+          "text": "clic",
+          "startMs": 816.6666666666667,
+          "endMs": 1233.3333333333335
+        },
+        {
+          "text": "en",
+          "startMs": 1233.3333333333335,
+          "endMs": 1650
+        },
+        {
+          "text": "Ver",
+          "startMs": 1650,
+          "endMs": 2066.666666666667
+        },
+        {
+          "text": "actividades",
+          "startMs": 2066.666666666667,
+          "endMs": 2483.3333333333335
+        },
+        {
+          "text": "para",
+          "startMs": 2483.3333333333335,
+          "endMs": 2900
+        },
+        {
+          "text": "ver",
+          "startMs": 2900,
+          "endMs": 3316.666666666667
+        },
+        {
+          "text": "las",
+          "startMs": 3316.666666666667,
+          "endMs": 3733.3333333333335
+        },
+        {
+          "text": "actividades",
+          "startMs": 3733.3333333333335,
+          "endMs": 4150
+        },
+        {
+          "text": "disponibles",
+          "startMs": 4150,
+          "endMs": 4566.666666666667
+        },
+        {
+          "text": "del",
+          "startMs": 4566.666666666667,
+          "endMs": 4983.333333333334
+        },
+        {
+          "text": "libro.",
+          "startMs": 4983.333333333334,
+          "endMs": 5400
+        }
+      ]
+    },
+    {
+      "id": "step-7",
+      "type": "flow",
+      "title": "Actividades del Libro Disponibles",
+      "transcript": "¡Listo! Ya puedes explorar y realizar todas las actividades del libro en PuntajeNacional.",
+      "audio": null,
+      "screenshot": "assets/screenshot_7.webp",
+      "duration": 5500,
+      "pageTitle": "PuntajeNacional.cl - Actividades del Libro",
+      "enableZoom": true,
+      "boundingBox": {
+        "x": 0.5,
+        "y": 0.5,
+        "width": 0.1,
+        "height": 0.05
+      },
+      "clickCoords": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "marks": [
+        {
+          "text": "¡Listo!",
+          "startMs": 400,
+          "endMs": 746.1538461538462
+        },
+        {
+          "text": "Ya",
+          "startMs": 746.1538461538462,
+          "endMs": 1092.3076923076924
+        },
+        {
+          "text": "puedes",
+          "startMs": 1092.3076923076924,
+          "endMs": 1438.4615384615383
+        },
+        {
+          "text": "explorar",
+          "startMs": 1438.4615384615383,
+          "endMs": 1784.6153846153845
+        },
+        {
+          "text": "y",
+          "startMs": 1784.6153846153845,
+          "endMs": 2130.7692307692305
+        },
+        {
+          "text": "realizar",
+          "startMs": 2130.7692307692305,
+          "endMs": 2476.9230769230767
+        },
+        {
+          "text": "todas",
+          "startMs": 2476.9230769230767,
+          "endMs": 2823.076923076923
+        },
+        {
+          "text": "las",
+          "startMs": 2823.076923076923,
+          "endMs": 3169.230769230769
+        },
+        {
+          "text": "actividades",
+          "startMs": 3169.230769230769,
+          "endMs": 3515.3846153846152
+        },
+        {
+          "text": "del",
+          "startMs": 3515.3846153846152,
+          "endMs": 3861.5384615384614
+        },
+        {
+          "text": "libro",
+          "startMs": 3861.5384615384614,
+          "endMs": 4207.692307692308
+        },
+        {
+          "text": "en",
+          "startMs": 4207.692307692308,
+          "endMs": 4553.846153846153
+        },
+        {
+          "text": "PuntajeNacional.",
+          "startMs": 4553.846153846153,
+          "endMs": 4900
+        }
+      ]
+    }
+  ]
+}
