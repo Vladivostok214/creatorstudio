@@ -34,7 +34,6 @@ for candidate in [
     os.path.join(PROJECT_DIR, "timeline.json"),
     os.path.join(PROJECT_ASSETS_DIR, "timeline.json"),
     os.path.join(SCRIPT_DIR, "public", "assets", "timeline.json"),
-    os.path.join(SCRIPT_DIR, "timeline.json")
 ]:
     if os.path.exists(candidate):
         TIMELINE_PATH = candidate

@@ -44,7 +44,6 @@ class CreatorStudio {
   }
 
   private async init() {
-    this.unregisterOldServiceWorkers();
     this.setupGlobalRenderProgressListener();
     // Siempre iniciar en la Landing Screen limpia
     this.renderLandingWelcome();
@@ -83,16 +82,6 @@ class CreatorStudio {
       });
     } catch (e) {
       console.warn('Error configurando listeners globales:', e);
-    }
-  }
-
-  private unregisterOldServiceWorkers() {
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.getRegistrations().then((registrations) => {
-        for (const reg of registrations) {
-          reg.unregister();
-        }
-      });
     }
   }
 
@@ -579,14 +568,17 @@ class CreatorStudio {
 
   private bindEvents() {
     // Volver a Landing
-    document.getElementById('btn-close-project')?.addEventListener('click', () => {
+    const handleCloseToLanding = () => {
       this.saveProjectData(false);
       localStorage.removeItem('creator_studio_project');
       localStorage.removeItem('creator_studio_project_dir');
       this.projectDir = '';
       this.isProjectLoaded = false;
       this.renderLandingWelcome();
-    });
+    };
+
+    document.getElementById('btn-close-project')?.addEventListener('click', handleCloseToLanding);
+    document.getElementById('brand-logo')?.addEventListener('click', handleCloseToLanding);
 
     // Título del proyecto
     document.getElementById('project-title-input')?.addEventListener('input', (e) => {

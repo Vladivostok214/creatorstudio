@@ -696,15 +696,6 @@ fn base64_encode(data: &[u8]) -> String {
 }
 
 #[tauri::command]
-fn check_ffmpeg_installed() -> bool {
-    Command::new("ffmpeg")
-        .arg("-version")
-        .output()
-        .map(|out| out.status.success())
-        .unwrap_or(false)
-}
-
-#[tauri::command]
 async fn start_web_recorder(
     app: AppHandle,
     state: State<'_, AppState>,
@@ -938,28 +929,6 @@ fn do_finish_web_recorder(app: &AppHandle, state: &AppState) -> Result<String, S
 }
 
 #[tauri::command]
-async fn record_web_step(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    rel_x: f64,
-    rel_y: f64,
-    subtitle: String,
-    title: String,
-) -> Result<usize, String> {
-    do_record_web_step(&app, &state, rel_x, rel_y, subtitle, title)
-}
-
-#[tauri::command]
-fn undo_last_web_step(state: State<'_, AppState>) -> Result<usize, String> {
-    do_undo_last_web_step(&state)
-}
-
-#[tauri::command]
-async fn finish_web_recorder(app: AppHandle, state: State<'_, AppState>) -> Result<String, String> {
-    do_finish_web_recorder(&app, &state)
-}
-
-#[tauri::command]
 async fn start_render_job(app: AppHandle, project_dir: Option<String>, output_path: Option<String>) -> Result<String, String> {
     let (tx, rx) = std::sync::mpsc::channel();
 
@@ -1153,12 +1122,8 @@ pub fn run() {
         import_step_screenshot,
         set_project_background,
         read_file_as_base64,
-        check_ffmpeg_installed,
         start_render_job,
-        start_web_recorder,
-        record_web_step,
-        undo_last_web_step,
-        finish_web_recorder
+        start_web_recorder
     ])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
