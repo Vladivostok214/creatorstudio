@@ -83,7 +83,7 @@ Creator App/
 * **Crear Nuevo Proyecto:** 
   1. El usuario selecciona una carpeta vacía o dedicada.
   2. Rust inicializa un archivo `project.json` base y la subcarpeta `assets/`.
-  3. Copia el fondo por defecto `guideless_bg.webp` dentro del proyecto.
+  3. Copia el fondo por defecto `creator_bg.webp` dentro del proyecto.
 * **Abrir Proyecto Existente:**
   1. El usuario selecciona cualquier archivo `project.json` o `timeline.json`.
   2. La aplicación lee los datos y resuelve dinámicamente las rutas de las capturas relativas a la carpeta del proyecto.

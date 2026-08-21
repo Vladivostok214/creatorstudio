@@ -13,7 +13,7 @@ class CreatorStudio {
       resolution: { width: 1920, height: 1080 },
       fps: 30,
       theme: 'mac_dark',
-      background: 'assets/guideless_bg.webp',
+      background: 'assets/creator_bg.webp',
       zoomFactor: 1.20,
       clickAnimationDurationMs: 1100,
       headerStyle: {
@@ -73,8 +73,16 @@ class CreatorStudio {
           }
         }
       });
+
+      listen<{ projectFile: string; projectDir: string }>('web-recorder-finished', async (event) => {
+        const { projectFile } = event.payload;
+        console.log('[FRONTEND] Web recorder finalizado:', projectFile);
+        this.closeWebRecorderModal();
+        await this.loadProjectByPath(projectFile);
+        this.showToast('🎉 ¡Recorrido web capturado y ensamblado con éxito!');
+      });
     } catch (e) {
-      console.warn('Error configurando listener de progreso:', e);
+      console.warn('Error configurando listeners globales:', e);
     }
   }
 
@@ -109,12 +117,21 @@ class CreatorStudio {
           </div>
 
           <div class="landing-actions">
+            <!-- Capturar desde Web / URL -->
+            <div id="card-web-recorder" class="landing-action-box highlight-box">
+              <div class="action-icon">🌐</div>
+              <div class="action-content">
+                <div class="action-title">Capturar desde Web <span class="badge-new">NUEVO</span></div>
+                <div class="action-desc">Navega en vivo por cualquier web o app; cada clic generará un paso con captura y cursor automático.</div>
+              </div>
+            </div>
+
             <!-- Crear Nuevo Proyecto -->
             <div id="card-new-project" class="landing-action-box">
               <div class="action-icon">➕</div>
               <div class="action-content">
-                <div class="action-title">Crear Nuevo Proyecto</div>
-                <div class="action-desc">Selecciona una carpeta para iniciar un tutorial desde cero con tus capturas.</div>
+                <div class="action-title">Crear en Blanco</div>
+                <div class="action-desc">Selecciona una carpeta para iniciar un tutorial desde cero con tus propias capturas.</div>
               </div>
             </div>
 
@@ -122,8 +139,8 @@ class CreatorStudio {
             <div id="card-open-project" class="landing-action-box">
               <div class="action-icon">📂</div>
               <div class="action-content">
-                <div class="action-title">Abrir Proyecto Existente</div>
-                <div class="action-desc">Abre un archivo project.json o la carpeta de un tutorial ya creado.</div>
+                <div class="action-title">Abrir Proyecto</div>
+                <div class="action-desc">Abre un archivo project.json o la carpeta de un tutorial ya existente.</div>
               </div>
             </div>
           </div>
@@ -135,8 +152,169 @@ class CreatorStudio {
       </div>
     `;
 
+    document.getElementById('card-web-recorder')?.addEventListener('click', () => this.handleWebRecorderFlow());
     document.getElementById('card-new-project')?.addEventListener('click', () => this.handleNewProjectFlow());
     document.getElementById('card-open-project')?.addEventListener('click', () => this.handleOpenProjectFlow());
+  }
+
+  private closeWebRecorderModal() {
+    const existing = document.getElementById('web-recorder-modal');
+    if (existing) existing.remove();
+  }
+
+  public handleWebRecorderFlow() {
+    this.closeWebRecorderModal();
+
+    const modal = document.createElement('div');
+    modal.id = 'web-recorder-modal';
+    modal.className = 'creator-modal-overlay';
+    modal.innerHTML = `
+      <div class="creator-modal-dialog">
+        <div class="creator-modal-header">
+          <div style="display: flex; align-items: center; gap: 8px;">
+            <span style="font-size: 20px;">🌐</span>
+            <h2 style="font-size: 18px; font-weight: 700; color: #ffffff;">Captura Asistida desde Navegador Web</h2>
+          </div>
+          <button id="btn-close-recorder-modal" class="modal-close-btn">&times;</button>
+        </div>
+
+        <div class="creator-modal-body">
+          <p style="font-size: 13px; color: var(--text-muted); line-height: 1.5; margin-bottom: 18px;">
+            Se abrirá un navegador integrado con un HUD flotante. Cada vez que hagas clic en un botón, enlace o campo, el sistema capturará automáticamente el fotograma y registrará el cursor con texto explicativo inteligente.
+          </p>
+
+          <div class="modal-form-group">
+            <label class="modal-form-label">URL del Sitio o Aplicación Web:</label>
+            <input type="text" id="rec-target-url" class="modal-form-input" placeholder="https://ejemplo.com" value="https://linear.app" />
+          </div>
+
+          <div class="modal-form-group">
+            <label class="modal-form-label">Título del Tutorial:</label>
+            <input type="text" id="rec-project-title" class="modal-form-input" placeholder="Nombre del proyecto" value="Tutorial Interactivo Web" />
+          </div>
+
+          <div class="modal-form-group">
+            <label class="modal-form-label">Carpeta de Destino del Proyecto:</label>
+            <div style="display: flex; gap: 8px;">
+              <input type="text" id="rec-project-dir" class="modal-form-input" placeholder="Selecciona una carpeta..." readonly />
+              <button id="btn-browse-rec-folder" class="btn-glass" style="white-space: nowrap;">📁 Examinar</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="creator-modal-footer">
+          <button id="btn-cancel-recorder" class="btn-glass">Cancelar</button>
+          <button id="btn-launch-recorder" class="btn-primary" style="display: flex; align-items: center; gap: 6px;">
+            <span>🚀</span> Iniciar Grabación Web
+          </button>
+        </div>
+      </div>
+    `;
+
+    document.body.appendChild(modal);
+
+    let selectedFolder = '';
+
+    const folderInput = modal.querySelector('#rec-project-dir') as HTMLInputElement;
+    const btnBrowse = modal.querySelector('#btn-browse-rec-folder');
+    const btnLaunch = modal.querySelector('#btn-launch-recorder') as HTMLButtonElement;
+    const btnCancel = modal.querySelector('#btn-cancel-recorder');
+    const btnClose = modal.querySelector('#btn-close-recorder-modal');
+
+    btnBrowse?.addEventListener('click', async () => {
+      const chosen = await open({
+        directory: true,
+        multiple: false,
+        title: 'Seleccionar carpeta donde guardar el proyecto grabado'
+      });
+      if (chosen) {
+        selectedFolder = Array.isArray(chosen) ? chosen[0] : chosen;
+        if (folderInput) folderInput.value = selectedFolder;
+      }
+    });
+
+    btnCancel?.addEventListener('click', () => this.closeWebRecorderModal());
+    btnClose?.addEventListener('click', () => this.closeWebRecorderModal());
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) this.closeWebRecorderModal();
+    });
+
+    btnLaunch?.addEventListener('click', async () => {
+      const url = (modal.querySelector('#rec-target-url') as HTMLInputElement)?.value.trim();
+      const title = (modal.querySelector('#rec-project-title') as HTMLInputElement)?.value.trim() || 'Tutorial Grabado';
+
+      if (!url) {
+        alert('Por favor ingresa una URL válida');
+        return;
+      }
+
+      if (!selectedFolder) {
+        alert('Por favor selecciona una carpeta de destino para el proyecto');
+        return;
+      }
+
+      btnLaunch.disabled = true;
+      btnLaunch.innerHTML = '<span>⚡</span> Abriendo Navegador...';
+
+      try {
+        await invoke('start_web_recorder', {
+          url,
+          projectDir: selectedFolder,
+          projectTitle: title
+        });
+        this.showToast('🌐 Ventana de grabación lista. ¡Navega y haz clic!');
+        this.closeWebRecorderModal();
+      } catch (err) {
+        console.error('Error iniciando grabador web:', err);
+        this.showToast(`❌ Error: ${err}`);
+        btnLaunch.disabled = false;
+        btnLaunch.innerHTML = '<span>🚀</span> Iniciar Grabación Web';
+      }
+    });
+  }
+
+  public async loadProjectByPath(filePath: string) {
+    try {
+      const content = await invoke<string>('load_project_file', { filePath });
+      const raw = JSON.parse(content);
+
+      const parentDir = filePath.replace(/[\/\\][^\/\\]+$/, '');
+      this.projectDir = parentDir;
+      localStorage.setItem('creator_studio_project_dir', parentDir);
+
+      this.project.title = raw.title || (raw.settings && raw.settings.title) || 'Tutorial Cargado';
+      if (raw.settings) this.project.settings = { ...this.project.settings, ...raw.settings };
+      
+      this.project.steps = (raw.steps || []).map((st: any) => {
+        if (!st.clickCoords && st.cursorPosition) {
+          st.clickCoords = { x: Number(st.cursorPosition.x) || 0.5, y: Number(st.cursorPosition.y) || 0.5 };
+        }
+        if (st.enableZoom === undefined && st.type === 'click') {
+          st.enableZoom = true;
+        }
+        if (!st.marks || st.marks.length === 0) {
+          this.autoGenerateMarks(st);
+        }
+        return st;
+      });
+
+      this.currentStepIndex = 0;
+      this.currentTimeMs = 0;
+      this.saveProjectData();
+
+      this.isProjectLoaded = true;
+      this.renderLayout();
+      this.setupResizeObserver();
+      this.bindEvents();
+      this.updateStageContent();
+      this.updateInspector();
+
+      this.showToast(`📂 Proyecto cargado exitosamente`);
+    } catch (e) {
+      console.error('Error cargando proyecto:', e);
+      this.showToast(`❌ Error cargando proyecto: ${e}`);
+    }
   }
 
   private async handleNewProjectFlow() {
@@ -191,29 +369,7 @@ class CreatorStudio {
       const filePath = Array.isArray(chosen) ? chosen[0] : chosen;
       if (!filePath) return;
 
-      const content = await invoke<string>('load_project_file', { filePath });
-      const raw = JSON.parse(content);
-
-      const parentDir = filePath.replace(/[\/\\][^\/\\]+$/, '');
-      this.projectDir = parentDir;
-      localStorage.setItem('creator_studio_project_dir', parentDir);
-
-      this.project.title = raw.title || 'Tutorial Cargado';
-      if (raw.settings) this.project.settings = { ...this.project.settings, ...raw.settings };
-      this.project.steps = raw.steps || [];
-
-      this.currentStepIndex = 0;
-      this.currentTimeMs = 0;
-      this.saveProjectData();
-
-      this.isProjectLoaded = true;
-      this.renderLayout();
-      this.setupResizeObserver();
-      this.bindEvents();
-      this.updateStageContent();
-      this.updateInspector();
-
-      this.showToast(`📂 Proyecto cargado exitosamente`);
+      await this.loadProjectByPath(filePath);
     } catch (e) {
       console.error('Error abriendo proyecto:', e);
       this.showToast(`❌ Error abriendo proyecto: ${e}`);
@@ -227,7 +383,7 @@ class CreatorStudio {
         resolution: { width: 1920, height: 1080 },
         fps: 30,
         theme: 'mac_dark',
-        background: 'assets/guideless_bg.webp',
+        background: 'assets/creator_bg.webp',
         zoomFactor: 1.20,
         clickAnimationDurationMs: 1100,
         headerStyle: {
@@ -298,6 +454,9 @@ class CreatorStudio {
             </button>
             <button id="btn-open-project" class="btn-glass" title="Abrir proyecto existente">
               <span>📂</span> Abrir
+            </button>
+            <button id="btn-record-web" class="btn-glass btn-glass-recorder" title="Grabar recorrido interactivo desde una web">
+              <span>🌐</span> Grabar Web
             </button>
             <button id="btn-close-project" class="btn-glass" title="Cerrar proyecto y volver a la pantalla de bienvenida">
               <span>🚪</span> Cerrar
@@ -397,7 +556,7 @@ class CreatorStudio {
   }
 
   private async resolveAssetUrl(relOrAbs: string): Promise<string> {
-    if (!relOrAbs) return '/assets/guideless_bg.webp';
+    if (!relOrAbs || relOrAbs.includes('guideless_bg')) return '/assets/creator_bg.webp';
     if (relOrAbs.startsWith('data:') || relOrAbs.startsWith('http')) return relOrAbs;
 
     // Si tenemos un directorio de proyecto activo en Tauri
@@ -449,6 +608,9 @@ class CreatorStudio {
 
     // Abrir Proyecto Existente
     document.getElementById('btn-open-project')?.addEventListener('click', () => this.handleOpenProjectFlow());
+
+    // Grabar Recorrido Web
+    document.getElementById('btn-record-web')?.addEventListener('click', () => this.handleWebRecorderFlow());
 
     // Añadir Paso con Captura (JPG/PNG)
     document.getElementById('btn-add-screenshot-step')?.addEventListener('click', async () => {
@@ -1070,10 +1232,10 @@ class CreatorStudio {
     }
 
     if (img) {
-      if (isZoomState && step.boundingBox) {
+      if (isZoomState && (step.boundingBox || step.clickCoords)) {
         const z = this.project.settings.zoomFactor;
-        const cx = step.boundingBox.x + step.boundingBox.width / 2;
-        const cy = step.boundingBox.y + step.boundingBox.height / 2;
+        const cx = step.boundingBox ? (step.boundingBox.x + step.boundingBox.width / 2) : (step.clickCoords?.x ?? 0.5);
+        const cy = step.boundingBox ? (step.boundingBox.y + step.boundingBox.height / 2) : (step.clickCoords?.y ?? 0.5);
 
         let tx = (0.5 - cx * z) * 100;
         let ty = (0.5 - cy * z) * 100;

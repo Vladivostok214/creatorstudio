@@ -48,7 +48,7 @@ DEFAULT_SETTINGS = {
     "resolution": {"width": 1920, "height": 1080},
     "fps": 30,
     "theme": "mac_dark",
-    "background": "assets/guideless_bg.webp",
+    "background": "assets/creator_bg.webp",
     "zoomFactor": 1.20,
     "headerStyle": {
         "text": "Tutorial Interactivo",
@@ -84,7 +84,7 @@ CANVAS_H = float(settings.get("resolution", {}).get("height", 1080))
 fps = int(settings.get("fps", 30))
 zoom_factor = float(settings.get("zoomFactor", 1.20))
 header_style = settings.get("headerStyle", DEFAULT_SETTINGS["headerStyle"])
-bg_setting = str(settings.get("background", "assets/guideless_bg.webp"))
+bg_setting = str(settings.get("background", "assets/creator_bg.webp"))
 
 # Dimensiones exactas del Studio DOM
 MOCKUP_W = 1540.0
@@ -237,8 +237,11 @@ def init_worker():
 
     # Cargar fondo personalizado o fallback
     bg_resolved = resolve_asset_path(bg_setting)
-    if not bg_resolved:
-        bg_resolved = resolve_asset_path("assets/guideless_bg.webp")
+    if not bg_resolved or not os.path.exists(bg_resolved):
+        if "guideless_bg" in bg_setting:
+            bg_resolved = resolve_asset_path("assets/creator_bg.webp")
+    if not bg_resolved or not os.path.exists(bg_resolved):
+        bg_resolved = resolve_asset_path("assets/creator_bg.webp")
 
     if bg_resolved and os.path.exists(bg_resolved):
         bg_grad = Image.open(bg_resolved).convert("RGB").resize((int(CANVAS_W), int(CANVAS_H)), Image.Resampling.LANCZOS)
@@ -418,7 +421,6 @@ def render_single_frame(f_idx):
     mockup_h_int = int(MOCKUP_H)
     header_h_int = int(MOCKUP_HEADER_H)
     page_h_int = int(VIEWPORT_H)
-
     mockup_img = Image.new("RGBA", (mockup_w_int, mockup_h_int), (30, 41, 59, 255))
 
     # Cargar captura actual
@@ -427,7 +429,8 @@ def render_single_frame(f_idx):
 
     # 3. Transformación CSS de la Captura Actual
     zoom_trigger_sec = 0.70
-    enable_zoom = step.get("enableZoom", True) and step.get("type") != "section" and bool(step.get("boundingBox"))
+    has_focus = bool(step.get("boundingBox")) or bool(step.get("clickCoords")) or bool(step.get("cursorPosition"))
+    enable_zoom = step.get("enableZoom", True) and step.get("type") != "section" and has_focus
 
     if not enable_zoom or t_relative < zoom_trigger_sec:
         cur_scale = 1.0
@@ -435,13 +438,17 @@ def render_single_frame(f_idx):
         ty_pct = 0.0
     else:
         vp_scale = zoom_factor
-        bx = step.get("boundingBox", {}).get("x", 0.5)
-        by = step.get("boundingBox", {}).get("y", 0.5)
-        bw = step.get("boundingBox", {}).get("width", 0.1)
-        bh = step.get("boundingBox", {}).get("height", 0.05)
-
-        cx = bx + bw / 2.0
-        cy = by + bh / 2.0
+        if step.get("boundingBox"):
+            bx = float(step.get("boundingBox", {}).get("x", 0.5))
+            by = float(step.get("boundingBox", {}).get("y", 0.5))
+            bw = float(step.get("boundingBox", {}).get("width", 0.1))
+            bh = float(step.get("boundingBox", {}).get("height", 0.05))
+            cx = bx + bw / 2.0
+            cy = by + bh / 2.0
+        else:
+            click = step.get("clickCoords") or step.get("cursorPosition") or {"x": 0.5, "y": 0.5}
+            cx = float(click.get("x", 0.5))
+            cy = float(click.get("y", 0.5))
 
         target_tx_pct = (0.5 - cx * vp_scale) * 100.0
         target_ty_pct = (0.5 - cy * vp_scale) * 100.0
@@ -489,7 +496,7 @@ def render_single_frame(f_idx):
 
     # 4. Cursor y Ripple
     if step.get("type") != "section":
-        target_click = step.get("clickCoords", {"x": 0.5, "y": 0.5})
+        target_click = step.get("clickCoords") or step.get("cursorPosition") or {"x": 0.5, "y": 0.5}
 
         if t_relative < zoom_trigger_sec:
             cur_x_norm = 0.50

@@ -48,7 +48,7 @@ Este documento recopila las ideas, propuestas y mejoras arquitectónicas diseña
 
 ---
 
-## 3. Nivel 3: Esfuerzo Medio-Alto (Aceleración de Render y Exportación Multiformato)
+## 3. Nivel 3: Esfuerzo Medio-Alto (Aceleración de Render y Exportación Multiformato) (NO ES NECESARIO TODAVÍA)
 *Optimizaciones de cómputo y adaptación a redes sociales.*
 
 ### A. Exportación en Ratio Vertical 9:16 (Shorts / Reels / TikTok)
@@ -60,26 +60,26 @@ Este documento recopila las ideas, propuestas y mejoras arquitectónicas diseña
 
 ---
 
-## 4. Nivel 4: Esfuerzo Alto (Módulo de Navegador Embebido y Auto-Grabación de Recorridos)
+## 4. Nivel 4: Esfuerzo Alto (Módulo de Navegador Embebido y Auto-Grabación de Recorridos) — ✅ IMPLEMENTADO
 *La innovación disruptiva para eliminar por completo la fricción de tomar capturas manuales.*
 
-### A. Navegador Web Interno para Grabación de Flujos ("Guideless Mode Integrado")
-* **Concepto:**
+### A. Navegador Web Interno para Grabación de Flujos ("Navegador Web Integrado") — ✅
+* **Concepto & Implementado:**
   1. En la Landing de Creator Studio, el usuario presiona **"🌐 Capturar desde Web / URL"**.
-  2. Ingresa una URL objetivo (ej. `https://mi-aplicacion.com`).
-  3. Se abre un navegador WebView integrado con una barra flotante superior (*Puntos capturados: X*).
-  4. **Captura Automática por Clic:** Cada vez que el usuario hace clic en un botón o enlace de la página:
-     - Se toma una captura instantánea en alta resolución.
-     - Se detectan y guardan las coordenadas relativas exactas $(X, Y)$ del clic.
-     - Se extrae el texto del elemento cliqueado como sugerencia automática de subtítulo.
+  2. Ingresa una URL objetivo (ej. `https://mi-aplicacion.com`) y selecciona el directorio de destino.
+  3. Se abre una ventana WebView2 nativa independiente (`web_recorder`) con un HUD interactivo flotante (`REC`, contador de pasos, captura manual, deshacer, pausar y finalizar).
+  4. **Captura Limpia y Automática por Clic:**
+     - Al interactuar con la página, el HUD se oculta momentáneamente para tomar la captura 100% limpia sin superposiciones mediante aceleración gráfica de Windows (`CAPTUREBLT`).
+     - Se registran las coordenadas normalizadas exactas $(X, Y)$ del clic.
+     - Se extrae el texto del elemento cliqueado como sugerencia semántica de subtítulo y título.
 
-### B. Botón "Finalizar Grabación" y Auto-Ensamblaje Instantáneo
-* **Concepto:**
-  * Al hacer clic en el botón destacado **"Finalizar Grabación"**:
-    1. El navegador embebido se cierra.
-    2. Las capturas se guardan automáticamente en la carpeta `assets/` del nuevo proyecto.
-    3. Se genera el `project.json` con todos los pasos ordenados y los cursores ya calibrados en los lugares exactos donde el usuario hizo clic.
-    4. La aplicación abre de inmediato el **Editor de Creator Studio** con el tutorial montado y listo para exportar o retocar.
+### B. Botón "Finalizar Grabación" y Auto-Ensamblaje Instantáneo — ✅
+* **Concepto & Implementado:**
+  * Al hacer clic en el botón destacado **"✨ Finalizar Grabación"**:
+    1. El navegador embebido se cierra de forma segura.
+    2. Las capturas se guardan y optimizan automáticamente en la carpeta `assets/screenshots/` del proyecto.
+    3. Se genera el `project.json` con todos los pasos ordenados, los cursores (`clickCoords`) ya calibrados, el zoom enfocado al punto de acción y marcas de subtítulos (`marks`) sincronizadas.
+    4. La aplicación abre de inmediato el **Editor de Creator Studio** con el tutorial montado y listo para reproducir, retocar o exportar a MP4.
 * **Impacto:** Permite crear tutoriales completos de inicio a fin en menos de **1 minuto**.
 
 ---
@@ -93,9 +93,9 @@ Este documento recopila las ideas, propuestas y mejoras arquitectónicas diseña
 | **3. Aceleración GPU (NVENC / FFmpeg)** | 🟡 Media | ⭐⭐⭐⭐ | ✅ Implementado | `render_engine.py` |
 | **4. Selector de Fuentes, Colores y Estilos** | 🟡 Media | ⭐⭐⭐⭐⭐ | ✅ Implementado | `src/main.ts`, `render_engine.py` |
 | **5. Subtítulos y Mockups Arrastrables / Escala** | 🟡 Media | ⭐⭐⭐⭐⭐ | ✅ Implementado | `src/main.ts`, Canvas CSS, Pillow Math |
-| **6. Exportación 9:16 (Shorts/Reels) y GIF** | 🟡 Media-Alta | ⭐⭐⭐⭐ | ⏳ Pendiente | `render_engine.py` |
-| **7. Navegador Embebido con Auto-Grabación** | 🔴 Alta | ⭐⭐⭐⭐⭐⭐ | ⏳ Pendiente | Tauri WebView2, Rust IPC, `src/main.ts` |
+| **6. Navegador Embebido con Auto-Grabación Web** | 🔴 Alta | ⭐⭐⭐⭐⭐⭐ | ✅ Implementado | Tauri WebView2, Rust IPC, `src/main.ts` |
+| **7. Exportación 9:16 (Shorts/Reels) y GIF** | 🟡 Media-Alta | ⭐⭐⭐⭐ | ⏳ Pendiente | `render_engine.py` |
 
 ---
 
-> 💡 **Nota:** Fases 1 y 2 completadas y verificadas con paridad $1:1$ DOM $\leftrightarrow$ Python Render.
+> 💡 **Nota:** Fases 1, 2 y 4 completadas y verificadas con paridad $1:1$ DOM $\leftrightarrow$ Grabador Web $\leftrightarrow$ Python Render.

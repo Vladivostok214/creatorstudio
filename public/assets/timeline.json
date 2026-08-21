@@ -6,7 +6,7 @@
     },
     "fps": 30,
     "theme": "mac_dark",
-    "background": "/assets/guideless_bg.webp",
+    "background": "/assets/creator_bg.webp",
     "zoomFactor": 1.2,
     "clickAnimationDurationMs": 1100,
     "headerStyle": {

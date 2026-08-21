@@ -1,0 +1,19 @@
+{
+  "identifier": "remote",
+  "description": "enables event permissions for remote web recorder window",
+  "windows": [
+    "web_recorder"
+  ],
+  "remote": {
+    "urls": [
+      "http://*/*",
+      "https://*/*"
+    ]
+  },
+  "permissions": [
+    "core:default",
+    "core:event:default",
+    "core:event:allow-listen",
+    "core:event:allow-emit"
+  ]
+}

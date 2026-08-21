@@ -1,14 +1,14 @@
-# 📋 Spec-Driven Development (SDD): Guideless Studio / Creator App
+# 📋 Spec-Driven Development (SDD): Creator Studio
 *Documento vivo de arquitectura, especificaciones técnicas y roadmap de evolución continua.*
 
 ---
 
 ## 📌 1. Visión del Producto
-**Creator App (Guideless Studio)** es una aplicación de escritorio profesional y ligera (construida con **Tauri + Rust + Frontend Web Moderno**) diseñada para crear, editar y renderizar tutoriales interactivos y videos explicativos con estética moderna (*Glassmorphism, mockups elegantes de navegador, zoom & pan dinámico, subtítulos palabra por palabra y cursor animado*).
+**Creator Studio** es una aplicación de escritorio profesional y ligera (construida con **Tauri + Rust + Frontend Web Moderno**) diseñada para crear, editar y renderizar tutoriales interactivos y videos explicativos con estética moderna (*Glassmorphism, mockups elegantes de navegador, zoom & pan dinámico, subtítulos palabra por palabra y cursor animado*).
 
-### Dos Modos Principales de Creación:
+### Modos Principales de Creación:
 1. **Modo Manual (Crear desde cero):** Arrastrar capturas de pantalla, definir puntos de clic/zoom, escribir subtítulos y dejar que el estudio calcule los tiempos o ajustarlos manualmente.
-2. **Modo Importación (Guideless Source):** Importar archivos HTML o JSON exportados de Guideless para autocompletar toda la estructura y editarla libremente.
+2. **Modo Grabación Web Integrada:** Navegar en una ventana embebida interactiva donde cada clic genera automáticamente una captura de alta resolución, títulos semánticos y coordenadas exactas.
 
 ---
 
@@ -16,14 +16,14 @@
 
 ### A. Lienzo Virtual Nativo 1920×1080 (Zero-Drift WYSIWYG)
 - **Resolución Interna Fija:** Todas las posiciones, tamaños de tipografía, paddings y mockups se definen internamente en un canvas virtual de 1920 × 1080 px.
-- **Auto-Scaling en UI:** La ventana del editor aplica 	ransform: scale(k) para encajar en cualquier monitor sin alterar las coordenadas absolutas.
+- **Auto-Scaling en UI:** La ventana del editor aplica `transform: scale(k)` para encajar en cualquier monitor sin alterar las coordenadas absolutas.
 - **Paridad 1:1 con Render:** El motor de video toma exactamente las coordenadas del stage sin conversiones ni factores de distorsión.
 
 ### B. Core Desktop (Tauri + Rust)
-- **Tauri 2.x / v1:** WebView nativo ultraliviano (<15MB RAM/disco).
+- **Tauri 2.x:** WebView nativo ultraliviano (<15MB RAM/disco).
 - **Rust Backend:** 
   - Gestión de archivos de proyecto (project.json, imágenes, audio).
-  - Parser de payloads de Guideless (__NEXT_DATA__ extractor).
+  - Grabador web nativo con inyección de scripts y captura acelerada por hardware.
   - Orquestación del pipeline de renderizado a MP4 (Full HD 30/60 FPS).
 
 ### C. Frontend UI (Editor & Player)
@@ -48,7 +48,7 @@
     "resolution": { "width": 1920, "height": 1080 },
     "fps": 30,
     "theme": "mac_dark",
-    "background": "assets/guideless_bg.webp",
+    "background": "assets/creator_bg.webp",
     "zoomFactor": 1.20,
     "clickAnimationDurationMs": 1100
   },
@@ -99,23 +99,23 @@
   - [x] Panel Inspector para editar textos, duración, coordenadas de clic y switch de zoom.
   - [x] Módulo de auto-distribución de timestamps de palabras al editar el texto.
 
-- [ ] **Fase 4: Importador y Gestor de Proyectos Avanzado**
+- [ ] **Fase 4: Gestor de Proyectos y Captura Avanzada**
+  - [x] Grabador Web Integrado con captura acelerada por hardware y eventos en tiempo real.
   - [ ] Drag & Drop de imágenes locales para reemplazar o crear nuevos pasos al vuelo.
   - [ ] Selector visual de clic interactivo arrastrando el cursor directamente sobre el mockup.
-  - [ ] Parser para archivos HTML/JSON exportados de Guideless.
 
 - [x] **Fase 5: Integración con Tauri & Render Pipeline Local**
   - [x] Configurar Tauri v2 en el workspace de Rust (`src-tauri/Cargo.toml`, `tauri.conf.json`).
-  - [x] Comandos IPC (`save_project`, `load_project_file`, `check_ffmpeg_installed`, `render_frames_to_mp4`).
+  - [x] Comandos IPC (`save_project`, `load_project_file`, `check_ffmpeg_installed`, `start_render_job`).
   - [x] Integración de persistencia dual (descarga directa en Web / guardado nativo a disco en Tauri).
-  - [ ] Interfaz de progreso de renderizado de video MP4 con FFmpeg.
+  - [x] Interfaz de progreso de renderizado de video MP4 con FFmpeg.
 
 ---
 
 ## 📝 5. Registro de Decisiones y Cambios
 *Este apartado se actualizará conforme evolucionemos el código y surjan nuevas ideas o mejoras.*
 
-- **2026-08-18:** Definición inicial de arquitectura con Lienzo Virtual 1080p, soporte dual (creación desde cero + importador de Guideless) y migración planificada a Tauri.
+- **2026-08-18:** Definición inicial de arquitectura con Lienzo Virtual 1080p y migración planificada a Tauri.
 - **2026-08-18 (Versión Beta UI):** Creada la versión Beta del editor web (`Creator App/src/main.ts`, `style.css`, `types.ts`). Servidor Vite corriendo en `http://localhost:5173`. Soporte para previsualización 1080p nativa, inspector lateral interactivo, edición de subtítulos, zoom toggle, auto-sincronización de palabras y timeline dinámico.
 - **2026-08-19 (Ciclo Dual de Captura por Paso & Transiciones Suaves):** 
   1. *Estado Panorámico Inicial:* La captura se muestra completa al 100% (*Zero-Stretch*) mientras se lee la primera parte de la locución.
